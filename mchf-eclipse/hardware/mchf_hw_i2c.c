@@ -147,7 +147,7 @@ void mchf_hw_i2c_reset(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-uchar mchf_hw_i2c_WriteRegister(uchar I2CAddr,uchar RegisterAddr, uchar RegisterValue)
+int mchf_hw_i2c_WriteRegister( uint8_t I2CAddr, uint8_t RegisterAddr, uint8_t *data)
 {
 	//printf("i2c write 0x%02x 0x%02x 0x%02x\n\r",I2CAddr,RegisterAddr,RegisterValue);
 
@@ -193,7 +193,7 @@ uchar mchf_hw_i2c_WriteRegister(uchar I2CAddr,uchar RegisterAddr, uchar Register
 	}
 
 	// Prepare the register value to be sent
-	I2C_SendData(SI570_I2C, RegisterValue);
+	I2C_SendData(SI570_I2C, *data);
 
 	// Wait till all data have been physically transferred on the bus
 	I2C1_Timeout = I2C1_LONG_TIMEOUT;
@@ -217,9 +217,9 @@ uchar mchf_hw_i2c_WriteRegister(uchar I2CAddr,uchar RegisterAddr, uchar Register
 	return 0;
 }
 
-uchar mchf_hw_i2c_WriteBlock(uchar I2CAddr,uchar RegisterAddr, uchar *data,ulong size)
+int mchf_hw_i2c_WriteBlock( uint8_t I2CAddr, uint8_t RegisterAddr, uint8_t *data, uint8_t size)
 {
-	ulong i;
+	uint8_t i;
 
 	//printf("i2c write 0x%02x 0x%02x 0x%02x\n\r",I2CAddr,RegisterAddr,RegisterValue);
 
@@ -415,7 +415,7 @@ uchar mchf_hw_i2c_WriteBlock(uchar I2CAddr,uchar RegisterAddr, uchar *data,ulong
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-uchar mchf_hw_i2c_ReadRegister(uchar I2CAddr,uchar RegisterAddr, uchar *RegisterValue)
+int mchf_hw_i2c_ReadRegister( uint8_t I2CAddr,uint8_t RegisterAddr, uint8_t *data)
 {
 	//printf("i2c read\n\r");
 
@@ -500,7 +500,7 @@ uchar mchf_hw_i2c_ReadRegister(uchar I2CAddr,uchar RegisterAddr, uchar *Register
 	}
 
 	// Read data
-	*RegisterValue = I2C_ReceiveData(SI570_I2C);
+	*data = I2C_ReceiveData(SI570_I2C);
 
 	// stop bit flag
 	I2C1_Timeout = I2C1_FLAG_TIMEOUT;
@@ -533,7 +533,7 @@ uchar mchf_hw_i2c_ReadRegister(uchar I2CAddr,uchar RegisterAddr, uchar *Register
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-uchar mchf_hw_i2c_ReadData(uchar I2CAddr,uchar RegisterAddr, uchar *data, ulong size)
+int mchf_hw_i2c_ReadBlock( uint8_t I2CAddr,uint8_t RegisterAddr, uint8_t *data, uint8_t size)
 {
 	//printf("i2c read block\n\r");
 

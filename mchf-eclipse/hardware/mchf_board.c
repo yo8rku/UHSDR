@@ -11,10 +11,11 @@
 **  Licence:		For radio amateurs experimentation, non-commercial use only!   **
 ************************************************************************************/
 
-#include "mchf_board.h"
-
 #include <stdio.h>
 
+#include "mchf_board.h"		/**> Always add this first for configuration */
+
+#include "../drivers/ui/oscillator/si570.h"
 #include "mchf_hw_i2c.h"
 #include "mchf_hw_i2c2.h"
 
@@ -25,10 +26,8 @@
 //
 #include "codec.h"
 //
-#include "ui_si570.h"
-//
-// Eeprom items
 #include "eeprom.h"
+
 extern uint16_t VirtAddVarTab[NB_OF_VAR];
 //
 extern const ButtonMap	bm[];
@@ -809,7 +808,7 @@ void mchf_board_init(void)
 	mchf_hw_i2c_init();
 
 	// Get startup frequency of Si570, by DF8OE, 201506
-	ui_si570_calc_startupfrequency();
+	si570_init();
 
 
 	// Codec control interface

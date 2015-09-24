@@ -14,12 +14,13 @@
 #ifndef __MCHF_HW_I2C_H
 #define __MCHF_HW_I2C_H
 
-void 	mchf_hw_i2c_init(void);
-void 	mchf_hw_i2c_reset(void);
+void mchf_hw_i2c_init(void);
+void mchf_hw_i2c_reset(void);
 
-uchar 	mchf_hw_i2c_WriteRegister(uchar I2CAddr,uchar RegisterAddr, uchar RegisterValue);
-uchar 	mchf_hw_i2c_WriteBlock(uchar I2CAddr,uchar RegisterAddr, uchar *data,ulong size);
-uchar 	mchf_hw_i2c_ReadRegister (uchar I2CAddr,uchar RegisterAddr, uchar *RegisterValue);
-uchar 	mchf_hw_i2c_ReadData(uchar I2CAddr,uchar RegisterAddr, uchar *data, ulong size);
+int mchf_hw_i2c_WriteRegister( uint8_t I2CAddr, uint8_t RegisterAddr, uint8_t *data);
+int mchf_hw_i2c_WriteBlock( uint8_t I2CAddr, uint8_t RegisterAddr, uint8_t *data, uint8_t size);
+
+int mchf_hw_i2c_ReadRegister( uint8_t I2CAddr,uint8_t RegisterAddr, uint8_t *data);
+int mchf_hw_i2c_ReadBlock( uint8_t I2CAddr,uint8_t RegisterAddr, uint8_t *data, uint8_t size);
 
 #endif

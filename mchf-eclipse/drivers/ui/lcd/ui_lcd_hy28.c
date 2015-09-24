@@ -38,9 +38,10 @@ __IO TransceiverState ts;
 
 // ------------------------------------------------
 // Spectrum display
-extern __IO   SpectrumDisplay      sd;
+extern __IO SpectrumDisplay sd;
 
-extern __IO OscillatorState os;		// oscillator values - including Si570 startup frequency, displayed on splash screen
+// oscillator values - including Si570 startup frequency, displayed on splash screen
+extern __IO OscillatorState os;
 
 //*----------------------------------------------------------------------------
 //* Function Name       : UiLcdHy28_Delay
