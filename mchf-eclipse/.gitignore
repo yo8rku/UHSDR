@@ -1,7 +1,0 @@
-Debug/
-Release/
-firmware_Target_Flash/
-.metadata
-*.o
-*.d
-*~
