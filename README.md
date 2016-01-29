@@ -1,16 +1,10 @@
-Testing branch of mcHF firmware and bootloader - sources and binaries
+Here you can find the archived firmware versions since 0.219.24.
+Each archive contains complete source codes, binaries and related
+informations.
 
+It is recommended to use the latest stable version which you can
+find in MASTER BRANCH here on GitHub.
 
-Version <219.26.x>
-
-
-Binaries are located in mchf-eclipse and are named:
-- bootloader_testing.dfu
-- mchf_binary_for_flash_testing.bin
-
-If you only want binaries and not complete sources click on file you want to download and then on the button "Raw" right above the grey bar.
-
-Have fun - Open-Source opens possibilities!
-
-KA7OEI, Clint<br>
+have fun!
+vy 73
 DF8OE, Andreas
