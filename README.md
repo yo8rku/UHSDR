@@ -6,5 +6,7 @@ It is recommended to use the latest stable version which you can
 find in MASTER BRANCH here on GitHub.
 
 have fun!
-vy 73
+
+vy 73 de
+
 DF8OE, Andreas
