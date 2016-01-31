@@ -1,4 +1,4 @@
-Here you can find the archived firmware versions since 0.219.24.
+Here you can find the archived firmware versions since 0.219.23.
 Each archive contains complete source codes, binaries and related
 informations.
 
