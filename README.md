@@ -1,6 +1,6 @@
 Here you can find the archived firmware versions since 0.219.23.
 Each archive contains complete source codes, binaries and related
-informations.
+informations. 
 
 It is recommended to use the latest stable version which you can
 find in MASTER BRANCH here on GitHub.
