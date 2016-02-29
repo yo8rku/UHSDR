@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 // Common
@@ -1154,4 +1154,3 @@ const sFONT GL_Font8x8 =
     8, /* Width */
     8, /* Height */
 };
-

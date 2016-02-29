@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 #ifndef __MCHF_BOARD_H
 #define __MCHF_BOARD_H
@@ -46,14 +46,18 @@
 #define 	TRX4M_VER_MINOR			219
 #define 	TRX4M_VER_RELEASE		27
 //
-#define 	TRX4M_VER_BUILD			3
+#define 	TRX4M_VER_BUILD			4
 //
+
 #define		ATTRIB_STRING1			"Additional Contributions by"
-#define		ATTRIB_STRING2			"KA7OEI, DF8OE, the Open Source"
-#define		ATTRIB_STRING3			"and Amateur Radio Communities"
+#define		ATTRIB_STRING2			"KA7OEI, DF8OE and others."
+#define		ATTRIB_STRING3			"Licensed under CC BY-NC-SA 3.0"
 //
 // -----------------------------------------------------------------------------
 //#define 	DEBUG_BUILD
+
+#define USB_AUDIO_SUPPORT // uncomment this to get experimental USB AUDIO Support
+
 
 #define		WD_REFRESH_WINDOW		80
 #define		WD_REFRESH_COUNTER		127
@@ -446,6 +450,7 @@ typedef struct ButtonMap
 //
 #define	MIN_BANDS			0		// lowest band number
 #define	MAX_BANDS			17		// Highest band number:  17 = General coverage (RX only) band
+#define	MAX_BAND_NUM		(MAX_BANDS+1)		// Number of Bands
 
 #define	KHZ_MULT			4000	// multiplier to convert oscillator frequency or band size to display kHz, used below
 //
@@ -525,6 +530,7 @@ typedef struct ButtonMap
 #define	BAND_MODE_GEN			17			// General Coverage
 #define	BAND_FREQ_GEN			10000*KHZ_MULT		// 10000 kHz
 #define	BAND_SIZE_GEN			1*KHZ_MULT		// Dummy variable
+
 //
 //
 //
@@ -538,9 +544,9 @@ typedef struct ButtonMap
 //
 #define	BAND_FILTER_UPPER_20		16000000			// Upper limit for 20/30 meter filter
 //
-#define	BAND_FILTER_UPPER_6		4000000				// Upper limit for 4/6 meter filter
+#define	BAND_FILTER_UPPER_6		40000000			// Upper limit for 6 meter filter
 //
-#define	BAND_FILTER_UPPER_4		7000000				// Upper limit for 4/6 meter filter
+#define	BAND_FILTER_UPPER_4		70000000			// Upper limit for 4 meter filter
 //
 #define	DEFAULT_FREQ_OFFSET		4000				// Amount of offset (at LO freq) when loading "default" frequency
 //
@@ -566,6 +572,8 @@ enum	{
 	AUDIO_500HZ,
 	AUDIO_1P8KHZ,
 	AUDIO_2P3KHZ,
+	AUDIO_2P7KHZ,
+	AUDIO_2P9KHZ,
 	AUDIO_3P6KHZ,
 	AUDIO_WIDE
 };
@@ -579,7 +587,7 @@ enum	{
 //
 // use below to define the highest-used filter number-1
 //
-#define AUDIO_MAX_FILTER		6
+#define AUDIO_MAX_FILTER		8
 //
 //
 #define MIN_FILTER_SELECT_VAL		1		// Minimum value for selection of sub-filter
@@ -596,8 +604,14 @@ enum	{
 #define	MAX_2K3_FILTER			5
 #define	FILTER_2K3_DEFAULT		2		// Center frequency of 1412 Hz
 //
-#define	FILTER_3K6_DEFAULT		1		// 1 = Enabled
-#define	MAX_3K6_FILTER			1		// only on/off
+#define	MAX_2K7_FILTER			2
+#define	FILTER_2K7_DEFAULT		2		// Center frequency of 1412 Hz
+//
+#define	MAX_2K9_FILTER			2
+#define	FILTER_2K9_DEFAULT		2		// Center frequency of 1412 Hz
+//
+#define	MAX_3K6_FILTER			2		// only on/off
+#define	FILTER_3K6_DEFAULT		2		// 1 = Enabled
 //
 enum	{
 	WIDE_FILTER_10K_AM = 0,
@@ -621,6 +635,8 @@ enum	{
 #define	FILTER_500HZ_WIDTH		500
 #define	FILTER_1800HZ_WIDTH		1800
 #define FILTER_2300HZ_WIDTH		2300
+#define FILTER_2700HZ_WIDTH		2700
+#define FILTER_2900HZ_WIDTH		2900
 #define FILTER_3600HZ_WIDTH		3600
 #define	FILTER_5000HZ_WIDTH		5000
 #define	FILTER_6000HZ_WIDTH		6000
@@ -658,8 +674,14 @@ enum	{
 #define	FILT2300_4			1712
 #define	FILT2300_5			1150
 //
+#define FILT2700_1			1350
+#define	FILT2700_2			1425
+//
+#define FILT2900_1			1450
+#define	FILT2900_2			1525
+//
 #define FILT3600_1			1800
-#define	FILT3600_2			1800
+#define	FILT3600_2			1875
 #define	FILT3600			1800
 //
 #define	FILT5000			2500
@@ -711,7 +733,9 @@ enum {
 #define TX_AUDIO_MIC			0
 #define TX_AUDIO_LINEIN_L		1
 #define TX_AUDIO_LINEIN_R		2
-#define TX_AUDIO_MAX_ITEMS		2
+#define TX_AUDIO_DIG			3
+#define TX_AUDIO_DIGIQ			4
+#define TX_AUDIO_MAX_ITEMS		4
 //
 #define	LINE_GAIN_MIN			3
 #define	LINE_GAIN_MAX			31
@@ -1146,8 +1170,13 @@ enum {
 
 #define	EEPROM_DETECTOR_COUPLING_COEFF_160M	311	// Calibration coupling coefficient for FWD/REV power sensor for 160 meters
 #define	EEPROM_DETECTOR_COUPLING_COEFF_6M	312	// Calibration coupling coefficient for FWD/REV power sensor for 6 meters
-#define EEPROM_MIC_BIAS_ENABLE		313
+#define EEPROM_TUNE_POWER_LEVEL		313
 #define EEPROM_CAT_MODE_ACTIVE		314
+#define EEPROM_CAT_XLAT			315
+#define	EEPROM_FILTER_2K7_SEL		316		// Selection of 2.7 kHz filter
+#define	EEPROM_FILTER_2K9_SEL		317		// Selection of 2.9 kHz filter
+
+
 //
 //
 // NOTE:  EEPROM addresses up to 383 are currently defined
@@ -1277,6 +1306,8 @@ typedef struct TransceiverState
 	uchar	filter_500Hz_select;
 	uchar	filter_1k8_select;
 	uchar	filter_2k3_select;
+	uchar	filter_2k7_select;
+	uchar	filter_2k9_select;
 	uchar	filter_3k6_select;
 	uchar	filter_wide_select;
 	//
@@ -1337,7 +1368,7 @@ typedef struct TransceiverState
 	uchar	scope_grid_colour;	// saved color of spectrum scope grid;
 	ulong	scope_grid_colour_active;	// active color of spectrum scope grid;
 	uchar	scope_centre_grid_colour;	// color of center line of scope grid
-	ushort	scope_centre_grid_colour_active;	// active colour of the spectrum scope center grid line
+	ulong	scope_centre_grid_colour_active;	// active colour of the spectrum scope center grid line
 	uchar	scope_scale_colour;	// color of spectrum scope frequency scale
 	uchar	scope_rescale_rate;	// rescale rate on the 'scope
 	uchar	scope_agc_rate;		// agc rate on the 'scope
@@ -1355,6 +1386,10 @@ typedef struct TransceiverState
 	//
 	// Calibration factors for output power, in percent (100 = 1.00)
 	//
+#define ADJ_5W 0
+#define ADJ_FULL_POWER 1
+	uchar	pwr_adj[2][MAX_BAND_NUM];
+#if 0
 	uchar	pwr_80m_5w_adj;			// calibration adjust for 80 meters, 5 watts
 	uchar	pwr_60m_5w_adj;			// calibration adjust for 60 meters, 5 watts
 	uchar	pwr_40m_5w_adj;			// calibration adjust for 40 meters, 5 watts
@@ -1390,6 +1425,7 @@ typedef struct TransceiverState
 	uchar	pwr_2200m_full_adj;			// calibration adjust for 2200 meters, full power
 	uchar	pwr_630m_full_adj;			// calibration adjust for 630 meters, full power
 	uchar	pwr_160m_full_adj;			// calibration adjust for 160 meters, full power
+#endif
 	//
 	ulong	alc_decay;					// adjustable ALC release time - EEPROM read/write version
 	ulong	alc_decay_var;				// adjustable ALC release time - working variable version
@@ -1508,9 +1544,14 @@ typedef struct TransceiverState
 	uchar	rfmod_present;			// 0 = not present
 	uchar	vhfuhfmod_present;		// 0 = not present
 	uchar	multi;				// actual translate factor
+	uchar	tune_power_level;		// TX power in antenna tuning function
+	uchar	power_temp;			// temporary tx power if tune is different from actual tx power
+	bool	dsp_enabled;			// NR disabled
+	uchar	xlat;				// CAT <> IQ-Audio
 //	uint16_t df8oe_test;			// only debugging use
 } TransceiverState;
 //
+extern __IO TransceiverState ts;
 
 #define	POWERDOWN_DELAY_COUNT	30	// Delay in main service loop for the "last second" before power-down - to allow EEPROM write to complete
 
@@ -1536,15 +1577,11 @@ do {							\
 // Exports
 
 void mchf_board_green_led(int state);
-void mchf_board_red_led(int state);
 
-void mchf_board_switch_tx(char mode);
 void mchf_board_power_off(void);
 
 void mchf_board_init(void);
 void mchf_board_post_init(void);
-
-void mchf_board_power_button_input_init(void);
 
 uint16_t Read_EEPROM(uint16_t addr, uint16_t *value);
 uint16_t Write_EEPROM(uint16_t addr, uint16_t value);

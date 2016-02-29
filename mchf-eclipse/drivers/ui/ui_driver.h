@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 #ifndef __UI_DRIVER_H
@@ -359,16 +359,13 @@ typedef struct SWRMeter
 // Power supply
 typedef struct PowerMeter
 {
-	ulong	skip;
+	ulong	 skip;
 
-	ulong	pwr_aver;
-	uchar	p_curr;
+	ulong	 pwr_aver;
+	uchar	 p_curr;
 
-	uchar	v10;
-	uchar	v100;
-	uchar	v1000;
-	uchar	v10000;
-
+	uint32_t voltage;
+	char	 digits[6]; // voltage in millivolt upto 99.000 volt
 } PowerMeter;
 
 #define LO_COMP_SKP					50		//50000
@@ -561,7 +558,7 @@ typedef struct EepromSave
 // Supply Voltage indicator
 #define POS_PWRN_IND_X						0
 #define POS_PWRN_IND_Y						193
-#define POS_PWR_IND_X						5
+#define POS_PWR_IND_X						4
 #define POS_PWR_IND_Y						(POS_PWRN_IND_Y + 15)
 #define COL_PWR_IND							Grey2
 
@@ -579,14 +576,13 @@ typedef struct EepromSave
 // Exports
 void 	ui_driver_init(void);
 void 	ui_driver_thread(void);
-//void 	ui_driver_irq(void);
 void 	ui_driver_toggle_tx(void);
 void 	UiCalcRxPhaseAdj(void);
 void 	UiCalcTxPhaseAdj(void);
 void 	UiDriverLoadFilterValue(void);
 void 	UiDriverClearSpectrumDisplay(void);
 //
-void 	UiDriverChangeBandFilter(uchar band,uchar bpf_only);
+void 	UiDriverChangeBandFilter(uchar band);
 void 	UiDriverChangeFilter(uchar ui_only_update);
 void 	UiDriverCreateTemperatureDisplay(uchar enabled,uchar create);
 void 	UiDriverUpdateFrequency(char skip_encoder_check, uchar mode);
@@ -598,7 +594,6 @@ void 	UiDriverSetBandPowerFactor(uchar band);
 void 	UiDrawSpectrumScopeFrequencyBarText(void);
 void 	UiCheckForEEPROMLoadDefaultRequest(void);
 //
-void 	UiDriverChangeBandFilter(uchar band,uchar bpf_only);
 void 	UiDriverChangeFilter(uchar ui_only_update);
 void 	UiDriverSetBandPowerFactor(uchar band);
 void	UiCalcRxIqGainAdj(void);
@@ -629,7 +624,7 @@ void 	UiDriverChangeTuningStep(uchar is_up);
 //
 void 	uiCodecMute(uchar val);
 //
-void 	UiDriverSaveEepromValuesPowerDown(void);
+uint16_t 	UiDriverSaveEepromValuesPowerDown(void);
 void	UiCheckForEEPROMLoadFreqModeDefaultRequest(void);
 void	UiCheckForPressedKey(void);
 void 	UiKeyBeep(void);
@@ -777,4 +772,21 @@ STATE_SWITCH_OFF_PTT			//
 #define	STEP_PRESS_MINUS	1
 #define	STEP_PRESS_PLUS	2
 //
+
+// ------------------------------------------------
+// Keypad state
+extern __IO KeypadState				ks;
+
+// ------------------------------------------------
+// SWR/Power meter
+extern __IO SWRMeter					swrm;
+
+// ------------------------------------------------
+// Power supply meter
+extern __IO PowerMeter					pwmt;
+
+// ------------------------------------------------
+// LO Tcxo
+extern __IO LoTcxo						lo;
+
 #endif

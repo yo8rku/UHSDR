@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -69,7 +69,7 @@ typedef struct AudioDriverState
 	//
 	// Lock audio filter flag
 	//
-	bool					af_dissabled;			// if TRUE, audio filtering is disabled (used during filter bandwidth changing, etc.)
+	bool					af_disabled;			// if TRUE, audio filtering is disabled (used during filter bandwidth changing, etc.)
 	bool					tx_filter_adjusting;	// used to disable TX I/Q filter during phase adjustment
 
 	// AGC and audio related variables
@@ -562,10 +562,9 @@ enum	{
 //
 // Exports
 void audio_driver_init(void);
-void audio_driver_stop(void);
 void audio_driver_set_rx_audio_filter(void);
-void audio_driver_thread(void);
 void Audio_TXFilter_Init(void);
+uint32_t audio_driver_xlate_freq();
 //uchar audio_check_nr_dsp_state(void);
 
 #ifdef USE_24_BITS
@@ -573,5 +572,15 @@ void I2S_RX_CallBack(int32_t *src, int32_t *dst, int16_t size, uint16_t ht);
 #else
 void I2S_RX_CallBack(int16_t *src, int16_t *dst, int16_t size, uint16_t ht);
 #endif
+
+// ------------------------------------------------
+// Spectrum display
+extern __IO	SpectrumDisplay		sd;
+
+// Public Audio
+extern __IO		AudioDriverState	ads;
+
+
+
 
 #endif

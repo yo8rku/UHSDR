@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 #ifndef __UI_LCD_HY28_FONTS_H
@@ -22,7 +22,3 @@ typedef struct tFont
 } sFONT;
 
 #endif 
-
-
-
-

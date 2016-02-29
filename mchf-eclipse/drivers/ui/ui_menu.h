@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:		For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 #ifndef __UI_MENU_H
@@ -19,6 +19,8 @@
 void UiDriverUpdateMenu(uchar mode);
 void UiDriverMemMenu(void);
 void UiDriverUpdateMemLines(uchar var);
+void UiDriverMenuMapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr);
+
 //
 void UiLoadBeepFreq(void);
 //
@@ -33,7 +35,9 @@ enum {
 	MENU_300HZ_SEL,
 	MENU_500HZ_SEL,
 	MENU_1K8_SEL,
-	MENU_2k3_SEL,
+	MENU_2K3_SEL,
+	MENU_2K7_SEL,
+	MENU_2K9_SEL,
 	MENU_3K6_SEL,
 	MENU_WIDE_SEL,
 	MENU_CW_WIDE_FILT,
@@ -88,6 +92,10 @@ enum {
 	MENU_BACKUP_CONFIG,
 	MENU_RESTORE_CONFIG,
 	MENU_HARDWARE_INFO,
+	MENU_DUMMY_LINE_2,
+	MENU_DUMMY_LINE_3,
+	MENU_DUMMY_LINE_4,
+	MENU_DUMMY_LINE_5,
 	MENU_CONFIG_ENABLE,
 	//
 	MAX_MENU_ITEM	// Number of menu items - This must ALWAYS remain as the LAST item!
@@ -190,10 +198,13 @@ enum {
 	CONFIG_AGC_TIME_CONSTANT,
 	CONFIG_AM_TX_FILTER_ENABLE,
 	CONFIG_SSB_TX_FILTER_ENABLE,
+	CONFIG_TUNE_POWER_LEVEL,
 	CONFIG_FFT_WINDOW_TYPE,
 	CONFIG_RESET_SER_EEPROM,
+	CONFIG_DSP_ENABLE,
+	CONFIG_CAT_XLAT,
 	//
-	MAX_RADIO_CONFIG_ITEMS	// Number of radio configuration menu items - This must ALWAYS remain as the LAST item!
+	MAX_RADIO_CONFIG_ITEM	// Number of radio configuration menu items - This must ALWAYS remain as the LAST item!
 };
 //
 #endif

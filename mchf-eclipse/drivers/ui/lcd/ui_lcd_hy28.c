@@ -8,7 +8,7 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:      For radio amateurs experimentation, non-commercial use only!   **
+**  Licence:      CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
 
 // Optimization disable for this file
@@ -672,6 +672,27 @@ void UiLcdHy28_DrawStraightLine(ushort x, ushort y, ushort Length, uchar Directi
    }
 }
 
+// FIXME: DrawRectangle should be used
+void UiLcdHy28_DrawStraightLineDouble(ushort x, ushort y, ushort Length, uchar Direction,ushort color) {
+	UiLcdHy28_DrawStraightLine(x, y, Length, Direction,color);
+	if(Direction == LCD_DIR_VERTICAL) {
+		UiLcdHy28_DrawStraightLine(x+1, y, Length, Direction,color);
+	} else {
+		UiLcdHy28_DrawStraightLine(x, y+1, Length, Direction,color);
+	}
+}
+
+// FIXME: DrawRectangle should be used
+void UiLcdHy28_DrawStraightLineTriple(ushort x, ushort y, ushort Length, uchar Direction,ushort color) {
+	UiLcdHy28_DrawStraightLine(x, y, Length, Direction,color);
+	if(Direction == LCD_DIR_VERTICAL) {
+		UiLcdHy28_DrawStraightLine(x+1, y, Length, Direction,color);
+		UiLcdHy28_DrawStraightLine(x+2, y, Length, Direction,color);
+	} else {
+		UiLcdHy28_DrawStraightLineDouble(x, y+1, Length, Direction,color);
+		UiLcdHy28_DrawStraightLine(x, y+2, Length, Direction,color);
+	}
+}
 //*----------------------------------------------------------------------------
 //* Function Name       : UiLcdHy28_DrawHorizLineWithGrad
 //* Object              : draq horizontal line with gradient, most bright in
@@ -868,7 +889,7 @@ void UiLcdHy28_DrawChar(ushort x, ushort y, char symb,ushort Color, ushort bkCol
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_PrintText(ushort Xpos, ushort Ypos, char *str,ushort Color, ushort bkColor,uchar font)
+void UiLcdHy28_PrintText(ushort Xpos, ushort Ypos, const char *str,ushort Color, ushort bkColor,uchar font)
 {
     uint8_t    TempChar;
     const sFONT   *cf;
@@ -926,7 +947,7 @@ void UiLcdHy28_PrintText(ushort Xpos, ushort Ypos, char *str,ushort Color, ushor
 }
 
 
-uint16_t UiLcdHy28_TextWidth(char *str, uchar font) {
+uint16_t UiLcdHy28_TextWidth(const char *str, uchar font) {
 
 	const sFONT   *cf;
 	uint16_t Xpos = 0;
@@ -964,7 +985,7 @@ uint16_t UiLcdHy28_TextWidth(char *str, uchar font) {
 	return Xpos;
 }
 
-void UiLcdHy28_PrintTextRight(ushort Xpos, ushort Ypos, char *str,ushort Color, ushort bkColor,uchar font)
+void UiLcdHy28_PrintTextRight(ushort Xpos, ushort Ypos, const char *str,ushort Color, ushort bkColor,uchar font)
 {
 
 	uint16_t Xwidth = UiLcdHy28_TextWidth(str, font);
@@ -1692,23 +1713,25 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
 
    // Display the mode of the display interface
    //
-   if(sd.use_spi)
-   {
-	   if(sd.use_spi == 1)
-		   sprintf(tx,"LCD: HY28A SPI Mode");
-	   else
-		   sprintf(tx,"LCD: HY28B SPI Mode");
+   switch(sd.use_spi) {
+      case 0:
+         sprintf(tx,"LCD: Parallel Mode");
+         break;
+      case 1:
+         sprintf(tx,"LCD: HY28A SPI Mode");
+         break;
+      default:
+         sprintf(tx,"LCD: HY28B SPI Mode");
    }
-   else
-	   sprintf(tx,"LCD: Parallel Mode");
+
    //
    UiLcdHy28_PrintText(88,150,tx,Grey1,Black,0);
 
    //
    // Display startup frequency of Si570, By DF8OE, 201506
    //
-   int vorkomma = (int)(os.fout);
-   int nachkomma = (int)roundf((os.fout-vorkomma)*10000);
+   unsigned int vorkomma = (unsigned int)(os.fout);
+   unsigned int nachkomma = (unsigned int)roundf((os.fout-vorkomma)*10000);
 
    sprintf(tx,"%s%u%s%u%s","SI570 startup frequency: ",vorkomma,".",nachkomma," MHz");
    UiLcdHy28_PrintText(15, 165, tx, Grey1, Black, 0);
@@ -1730,7 +1753,6 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
 	   }
    }
 
-
    // Additional Attrib line 1
    sprintf(tx,"%s",ATTRIB_STRING1);
    UiLcdHy28_PrintText(54,195,tx,Grey1,Black,0);
@@ -1743,8 +1765,6 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
    sprintf(tx,"%s",ATTRIB_STRING3);
    UiLcdHy28_PrintText(50,225,tx,Grey1,Black,0);
 
-
-
    // Backlight on
    LCD_BACKLIGHT_PIO->BSRRL = LCD_BACKLIGHT;
 
@@ -1756,12 +1776,12 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
 
 void get_touchscreen_coordinates(void)
 {
-GPIO_ResetBits(TP_CS_PIO, TP_CS);
-UiLcdHy28_SendByteSpi(144);
-ts.tp_x = UiLcdHy28_ReadByteSpi();
-UiLcdHy28_SendByteSpi(208);
-ts.tp_y = UiLcdHy28_ReadByteSpi();
-GPIO_SetBits(TP_CS_PIO, TP_CS);
+   GPIO_ResetBits(TP_CS_PIO, TP_CS);
+   UiLcdHy28_SendByteSpi(144);
+   ts.tp_x = UiLcdHy28_ReadByteSpi();
+   UiLcdHy28_SendByteSpi(208);
+   ts.tp_y = UiLcdHy28_ReadByteSpi();
+   GPIO_SetBits(TP_CS_PIO, TP_CS);
 }
 
 #pragma GCC optimize("O0")

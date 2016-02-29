@@ -10,6 +10,16 @@
 #########################################################################
 
 
+20160228 [DF8OE]
+- corrected TX/RX switching of AFG/STG and RIT/WPM in CW
+- added USB audio functions
+- added #335 Tune Power Level for antenna tuning with specific power
+- added USB I/Q-Audio
+- reworked much code for better serviceability
+- activatiing ALC for USB-I/Q-input signals
+- added filters 2.7KHz and 2.9KHz as LPF and BPF
+
+
 20160213 [DF8OE]
 - adding new translate modes +/- 12KHz
 - added 5KHz tuning steps
