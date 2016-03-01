@@ -10,7 +10,7 @@
 #########################################################################
 
 
-2016xxyy [DF8OE]
+20160301 [DF8OE]
 - added dynamically tuning, activated/deactivated by tapping on step size 
 - hopefully improved USB audio recongnition of all Windows versions and Linux
 
