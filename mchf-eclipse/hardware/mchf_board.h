@@ -543,6 +543,8 @@ typedef struct ButtonMap
 #define	BAND_FILTER_UPPER_40		8000000				// Upper limit for 40/60 meter filter
 //
 #define	BAND_FILTER_UPPER_20		16000000			// Upper limit for 20/30 meter filter
+
+#define	BAND_FILTER_UPPER_10		32000000			// Upper limit for 10 meter filter
 //
 #define	BAND_FILTER_UPPER_6		40000000			// Upper limit for 6 meter filter
 //
@@ -1548,6 +1550,7 @@ typedef struct TransceiverState
 	uchar	power_temp;			// temporary tx power if tune is different from actual tx power
 	bool	dsp_enabled;			// NR disabled
 	uchar	xlat;				// CAT <> IQ-Audio
+	bool	dynamic_tuning_active;	// dynamic tuning active by estimating the encoder speed
 //	uint16_t df8oe_test;			// only debugging use
 } TransceiverState;
 //
