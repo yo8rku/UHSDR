@@ -101,6 +101,8 @@ drivers/cat/usb/usbd_desc.c \
 drivers/cat/usb/usbd_cdc_vcp.c \
 drivers/audio/cw/cw_gen.c \
 drivers/audio/audio_driver.c \
+drivers/audio/audio_filter.c \
+drivers/audio/audio_management.c \
 drivers/audio/codec/codec.c \
 drivers/audio/codec/i2s.c \
 drivers/audio/softdds/softdds.c \
@@ -110,9 +112,11 @@ drivers/keyboard/keyb_driver.c \
 drivers/ui/oscillator/ui_si570.c \
 drivers/ui/ui_menu.c \
 drivers/ui/ui_driver.c \
+drivers/ui/ui_configuration.c \
 drivers/ui/encoder/ui_rotary.c \
 drivers/ui/lcd/ui_lcd_hy28.c \
 drivers/ui/lcd/ui_lcd_hy28_fonts.c \
+drivers/ui/lcd/ui_spectrum.c \
 hardware/mchf_hw_i2c2.c \
 hardware/mchf_hw_i2c.c \
 hardware/mchf_board.c \

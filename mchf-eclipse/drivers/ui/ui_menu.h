@@ -16,13 +16,25 @@
 //
 // Exports
 //
-void UiDriverUpdateMenu(uchar mode);
-void UiDriverMemMenu(void);
-void UiDriverUpdateMemLines(uchar var);
-void UiDriverMenuMapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr);
+void UiMenu_MapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr);
 
-//
-void UiLoadBeepFreq(void);
+
+// The supported mode values
+enum {
+  MENU_RENDER_ONLY = 0,
+  MENU_PROCESS_VALUE_CHANGE,
+  MENU_PROCESS_VALUE_SETDEFAULT,
+};
+
+void UiMenu_RenderMenu(uint16_t mode);
+
+void UiMenu_RenderChangeItemValue(int16_t pot_diff);
+void UiMenu_RenderChangeItem(int16_t pot_diff);
+void UiMenu_RenderLastScreen();
+void UiMenu_RenderFirstScreen();
+bool UiMenu_RenderNextScreen(); // returns true if screen was changed, i.e. not last screen
+bool UiMenu_RenderPrevScreen(); // returns true if screen was changed, i.e. not first screen
+
 //
 #define	MENUSIZE	6				// number of menu items per page/screen
 //
@@ -37,9 +49,9 @@ enum {
 	MENU_1K8_SEL,
 	MENU_2K3_SEL,
 	MENU_2K7_SEL,
-	MENU_2K9_SEL,
 	MENU_3K6_SEL,
-	MENU_WIDE_SEL,
+	MENU_4K4_SEL,
+	MENU_6K0_SEL,
 	MENU_CW_WIDE_FILT,
 	MENU_SSB_NARROW_FILT,
 	MENU_AM_DISABLE,
@@ -106,7 +118,7 @@ enum {
 // These items MUST be listed below in the order that they appear!
 //
 enum {
-	CONFIG_FREQ_STEP_MARKER_LINE = 0,
+	CONFIG_FREQ_STEP_MARKER_LINE = MAX_MENU_ITEM,
 	CONFIG_STEP_SIZE_BUTTON_SWAP,
 	CONFIG_BAND_BUTTON_SWAP,
 	CONFIG_TX_DISABLE,
@@ -201,10 +213,40 @@ enum {
 	CONFIG_TUNE_POWER_LEVEL,
 	CONFIG_FFT_WINDOW_TYPE,
 	CONFIG_RESET_SER_EEPROM,
+	MENU_1K4_SEL,
+	MENU_1K6_SEL,
+	MENU_2K1_SEL,
+	MENU_2K5_SEL,
+	MENU_2K9_SEL,
+	MENU_3K2_SEL,
+	MENU_3K4_SEL,
+	MENU_3K8_SEL,
+	MENU_4K0_SEL,
+	MENU_4K2_SEL,
+	MENU_4K6_SEL,
+	MENU_4K8_SEL,
+	MENU_5K0_SEL,
+	MENU_5K5_SEL,
+	MENU_6K5_SEL,
+	MENU_7K0_SEL,
+	MENU_7K5_SEL,
+	MENU_8K0_SEL,
+	MENU_8K5_SEL,
+	MENU_9K0_SEL,
+	MENU_9K5_SEL,
+	MENU_10K0_SEL,
 	CONFIG_DSP_ENABLE,
 	CONFIG_CAT_XLAT,
+	MENU_FP_SEL,
 	//
 	MAX_RADIO_CONFIG_ITEM	// Number of radio configuration menu items - This must ALWAYS remain as the LAST item!
 };
 //
+// Starting position of configuration menu
+//
+#define POS_MENU_IND_X                      60      // X position of description of menu item being changed
+#define POS_MENU_IND_Y                      128     // Y position of first (top) item being changed
+#define POS_MENU_CHANGE_X                   244     // Position of variable being changed
+#define POS_MENU_CURSOR_X                   311     // Position of cursor used to indicate selected item
+
 #endif

@@ -214,10 +214,38 @@ uint8_t  AudioCtl[64];
 uint8_t  AudioCtlCmd = 0;
 uint32_t AudioCtlLen = 0;
 uint8_t  AudioCtlUnit = 0;
+uint8_t  AudioCtlCS = 0;
+uint8_t  AudioCtlCN = 0;
+uint8_t  AudioCtlIf = 0;
 
 extern USBD_Class_cb_TypeDef  USBD_CDC_cb;
 static uint32_t PlayFlag = 0;
 static uint32_t SendFlag = 0;
+
+
+UsbAudioUnit usbUnits[UnitMax] =
+{
+		{
+				.cs  = AUDIO_CONTROL_VOLUME,
+				.cn  = AUDIO_OUT_STREAMING_CTRL,
+				.min = -31 * 0x100,
+				.max = 0 * 0x100,
+				.res = 0x100,
+				.cur = -16* 0x100,
+				.ptr = &ts.tx_gain[TX_AUDIO_DIG]
+		},
+		{
+				.cs  = AUDIO_CONTROL_VOLUME,
+				.cn  = 0x06,
+				.min = -31 * 0x100,
+				.max = 0 * 0x100,
+				.res = 0x100,
+				.cur = -16* 0x100,
+				.ptr = &ts.rx_gain[RX_AUDIO_DIG].value
+		}
+
+};
+
 
 static __IO uint32_t  usbd_audio_AltSet[USBD_ITF_MAX_NUM];
 // each interface could potentially be audio and have alternate setting, EP0 gets "unused" entry
@@ -424,7 +452,7 @@ static uint8_t usbd_audio_CfgDesc[AUDIO_CONFIG_DESC_SIZE] =
 		AUDIO_OUT_STREAMING_CTRL,             /* bUnitID */
 		0x01,                                 /* bSourceID */
 		0x01,                                 /* bControlSize */
-		AUDIO_CONTROL_MUTE,                   /* bmaControls(0) */
+		AUDIO_CONTROL_VOLUME,                   /* bmaControls(0) */
 		0x00,                                 /* bmaControls(1) */
 		0x00,                                 /* iTerminal */
 		/* 09 byte*/
@@ -448,7 +476,7 @@ static uint8_t usbd_audio_CfgDesc[AUDIO_CONFIG_DESC_SIZE] =
 		0x04,                         // ID of this Terminal.
 		0x01,0x02,                    // Terminal is Microphone (0x01,0x02)
 		0x00,                         // No association
-		USBD_AUDIO_IN_CHANNELS,                         // One or two channel
+		USBD_AUDIO_IN_CHANNELS,       // One or two channel
 		0x00,0x00,                    // Mono sets no position bits
 		0x00,                         // Unused.
 		0x00,                         // Unused.
@@ -470,7 +498,7 @@ static uint8_t usbd_audio_CfgDesc[AUDIO_CONFIG_DESC_SIZE] =
 		0x06,             					  /* bUnitID */
 		0x04,                                 /* bSourceID */
 		0x01,                                 /* bControlSize */
-		AUDIO_CONTROL_MUTE,                   	      	  /* bmaControls(0) */
+		AUDIO_CONTROL_VOLUME,                 /* bmaControls(0) */
 		0x00,                                 /* bmaControls(1) */
 		0x00,                                 /* iTerminal */
 		/* 09 byte*/
@@ -718,6 +746,9 @@ static uint8_t  usbd_audio_Setup (void  *pdev,
 		} else {
 			switch (req->bRequest)
 			{
+			case AUDIO_REQ_GET_MIN:
+			case AUDIO_REQ_GET_MAX:
+			case AUDIO_REQ_GET_RES:
 			case AUDIO_REQ_GET_CUR:
 				AUDIO_Req_GetCurrent(pdev, req);
 				break;
@@ -804,13 +835,23 @@ static uint8_t  usbd_audio_EP0_RxReady (void  *pdev)
 		/* Check for which addressed unit the AudioControl request has been issued */
 		if (AudioCtlUnit == AUDIO_OUT_STREAMING_CTRL)
 		{/* In this driver, to simplify code, only one unit is manage */
-			/* Call the audio interface mute function */
-			retval = AUDIO_OUT_fops.MuteCtl(AudioCtl[0]);
-
+			/* Call the audio interface volume function */
+			int16_t val = (int16_t)((uint16_t)AudioCtl[0] | ((uint16_t)AudioCtl[1])<<8) ;
+			retval = AUDIO_OUT_fops.VolumeCtl((val/0x100)+31);
+			usbUnits[UnitVolumeTX].cur = val;
 			/* Reset the AudioCtlCmd variable to prevent re-entering this function */
-			AudioCtlCmd = 0;
-			AudioCtlLen = 0;
+		} else {
+			int16_t val = (int16_t)((uint16_t)AudioCtl[0] | ((uint16_t)AudioCtl[1])<<8) ;
+			retval = AUDIO_IN_fops.VolumeCtl((val/0x100)+31);
+			usbUnits[UnitVolumeRX].cur = val;
 		}
+		/* Reset the AudioCtlCmd variable to prevent re-entering this function */
+		AudioCtlCmd = 0;
+		AudioCtlLen = 0;
+		AudioCtlCS = 0;
+		AudioCtlCN = 0;
+		AudioCtlIf = 0;
+
 	} else {
 		retval = USBD_CDC_cb.EP0_RxReady(pdev);
 	}
@@ -982,7 +1023,28 @@ static uint8_t  usbd_audio_OUT_Incplt (void  *pdev)
  */
 static void AUDIO_Req_GetCurrent(void *pdev, USB_SETUP_REQ *req)
 {  
-	/* Send the current mute state */
+	UsbAudioUnit *unit = &usbUnits[HIBYTE(req->wIndex) == AUDIO_OUT_STREAMING_CTRL?UnitVolumeTX:UnitVolumeRX];
+	// find the right unit by index
+
+	int16_t* word =(int16_t*) &AudioCtl[0];
+
+	switch(req->bRequest) {
+	case AUDIO_REQ_GET_MIN:
+		word[0] = unit->min;
+		break;
+	case AUDIO_REQ_GET_MAX:
+		word[0] = unit->max;
+		break;
+	case AUDIO_REQ_GET_RES:
+		word[0] = unit->res;
+		break;
+	case AUDIO_REQ_GET_CUR:
+	    // we load the current value from the application layer and convert it.
+	    // not the most beautiful approach
+	    unit->cur = (((int16_t)(*unit->ptr))-31)*0x100;
+		word[0] = unit->cur;
+		break;
+	}
 	USBD_CtlSendData (pdev,
 			AudioCtl,
 			req->wLength);
@@ -1009,6 +1071,10 @@ static void AUDIO_Req_SetCurrent(void *pdev, USB_SETUP_REQ *req)
 		AudioCtlCmd = AUDIO_REQ_SET_CUR;     /* Set the request value */
 		AudioCtlLen = req->wLength;          /* Set the request data length */
 		AudioCtlUnit = HIBYTE(req->wIndex);  /* Set the request target unit */
+		AudioCtlIf   = LOBYTE(req->wIndex);  /* Set the request target unit */
+		AudioCtlCS   = HIBYTE(req->wValue);  /* Set the request target unit */
+		AudioCtlCN   = LOBYTE(req->wValue);  /* Set the request target unit */
+
 	}
 }
 

@@ -11,12 +11,13 @@
 **  Last Modified:                                                                 **
 **  Licence:		CC BY-NC-SA 3.0                                                **
 ************************************************************************************/
-
+#define NEWMENU
 // Common
 //
 #include "mchf_board.h"
 #include "ui.h"
 #include "ui_menu.h"
+#include "ui_configuration.h"
 
 #include <stdio.h>
 #include "arm_math.h"
@@ -39,7 +40,8 @@
 #include "softdds.h"
 //
 #include "audio_driver.h"
-
+#include "audio_filter.h"
+#include "audio_management.h"
 #include "ui_driver.h"
 //#include "usbh_usr.h"
 //
@@ -56,8 +58,10 @@
 #include "mchf_hw_i2c2.h"
 
 
-static void UiDriverUpdateMenuLines(uchar index, uchar mode);
-static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode);
+static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos);
+static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos);
+static void UiMenu_UpdateHWInfoLines(uchar index, uchar mode, int pos);
+static void UiMenu_DisplayValue(const char* value,uint32_t clr,uint16_t pos);
 //
 //
 // Public data structures
@@ -224,7 +228,7 @@ bool __attribute__ ((noinline)) UiDriverMenuItemChangeEnableOnOff(int var, uint8
 }
 
 
-void __attribute__ ((noinline)) UiDriverMenuMapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr) {
+void __attribute__ ((noinline)) UiMenu_MapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr) {
 	char* clr_str;
 	switch(color) {
 	case SPEC_WHITE: 	*clr_ptr = White;	clr_str = " Wht"; 	break;
@@ -249,295 +253,916 @@ void __attribute__ ((noinline)) UiDriverMenuMapStrings(char* output, uint32_t va
 
 char blankline[33] = "                                ";
 
-static char* base_screens[11][MENUSIZE] = {
-{ //1
-		"010-DSP NR Strength",
-		"020-300Hz Center Freq.",
-		"021-500HZ Center Freq.",
-		"022-1.8k Center Freq.",
-		"023-2.3k Center Freq.",
-		"024-2.7k Filter"
-},
-{ // 2
-		"025-2.9k Filter",
-		"026-3.6k Filter",
-		"027-Wide Filt. Sel.",
-		"028-Wide Filt in CW Mode",
-		"029-CW Filt in SSB Mode",
-		"030-AM Mode"
-},
-{ // 3
-		"031-LSB/USB Auto Select",
-		"040-FM Mode",
-		"041-FM Sub Tone Gen",
-		"042-FM Sub Tone Det",
-		"043-FM Tone Burst",
-		"044-FM RX Bandwidth"
-},
-{ // 4
-		"045-FM Deviation",
-		"050-AGC Mode",
-		"051-RF Gain",
-		"052-Cust AGC (+=Slower)",
-		"053-RX Codec Gain",
-		"054-RX NB Setting"
-},
-{	// 5
-		"055-RX/TX Freq Xlate",
-		"060-Mic/Line Select",
-		"061-Mic Input Gain",
-		"062-Line Input Gain",
-		"063-ALC Release Time",
-		"064-TX PRE ALC Gain"
-},
-{	// 6
-		"065-TX Audio Compress",
-		"070-CW Keyer Mode",
-		"071-CW Keyer Speed",
-		"072-CW Sidetone Gain",
-		"073-CW Side/Off Freq",
-		"074-CW Paddle Reverse"
-},
-{	// 7
-		"075-CW TX->RX Delay",
-		"076-CW Freq. Offset",
-		"090-TCXO Off/On/Stop",
-		"091-TCXO Temp. (C/F)",
-		"100-Spec Scope 1/Speed",
-		"101-Spec/Wfall Filter"
-},
-{	// 8
-		"102-Spec. Trace Colour",
-		"103-Spec. Grid Colour",
-		"104-Spec/Wfall ScaleClr",
-		"105-Spec/Wfall 2x Magn",
-		"106-Spec/Wfall AGC Adj.",
-		"107-Spec Scope Ampl."
-},
-{	// 9
-		"108-Spec/Wfall Line",
-		"109-Scope/Waterfall",
-		"110-Wfall Colours",
-		"111-Wfall Step Size",
-		"112-Wfall Brightness",
-		"113-Wfall Contrast"
-},
-{	// 10
-		"114-Wfall 1/Speed",
-		"115-Scope NoSig Adj.",
-		"116-Wfall NoSig Adj.",
-		"117-Wfall Size",
-		"197-Backup Config",
-		"198-Restore Config"
-},
-{	// 11
-		"199-Hardware Info               ",	//this screen must have blanks for cleaning hardware info page
-		blankline,
-		blankline,
-		blankline,
-		blankline,
-		"000-Adjustment Menu             "
-}
+// menu entry kind constants
+enum MENU_KIND {
+  MENU_STOP = 0, // last entry in a menu / group
+  MENU_ITEM, // standard menu entry
+  MENU_GROUP, // menu group entry
+  MENU_INFO, // just like a normal entry (read-only) but just for display purposes.
+  MENU_SEP, // separator line
+  MENU_BLANK // blank
 };
 
 
-static char* conf_screens[17][MENUSIZE] = {
-{ // 1
-		"200-Step Size Marker",
-		"201-Step Button Swap",
-		"202-Band+/- Button Swap",
-		"203-Transmit Disable",
-		"204-Menu SW on TX disable",
-		"205-Mute Line Out TX"
-},
-{	// 2
-		"206-TX Mute Delay",
-		"207-LCD Auto Blank",
-		"208-Voltmeter Cal.",
-		"209-Filter BW Display",
-		"210-Max Volume",
-		"211-Max RX Gain (0=Max)"
-},
-{ // 3
-		"212-Key Beep",
-		"213-Beep Frequency",
-		"214-Beep Volume",
-		"220-CAT Mode",
-		"230-Freq. Calibrate",
-		"231-Freq. Limit Disable"
-},
-{ // 4
-		"232-MemFreq Lim Disable",
-		"240-LSB RX IQ Bal.",
-		"241-LSB RX IQ Phase",
-		"242-USB RX IQ Bal.",
-		"243-USB RX IQ Phase",
-		"244-AM  RX IQ Bal."
-},
-{ // 5
-		"245-FM  RX IQ Bal.",
-		"250-LSB TX IQ Bal.",
-		"251-LSB TX IQ Phase",
-		"252-USB TX IQ Bal.",
-		"253-USB TX IQ Phase",
-		"254-AM  TX IQ Bal."
-},
-{ // 6
-		"255-FM  TX IQ Bal.",
-		"260-CW PA Bias (If >0 )",
-		"261-PA Bias",
-		"270-Disp. Pwr (mW)",
-		"271-Pwr. Det. Null",
-		"C01-2200m Coupling Adj."
-},
-{ // 7
-		"C02-630m Coupling Adj.",
-		"C03-160m Coupling Adj.",
-		"C04-80m  Coupling Adj.",
-		"C05-40m  Coupling Adj.",
-		"C06-20m  Coupling Adj.",
-		"C07-15m  Coupling Adj."
-},
-{	// 8
-		"C08-6m   Coupling Adj.",
-		"C09-2m   Coupling Adj.",
-		"C10-70cm Coupling Adj.",
-		"C11-23cm Coupling Adj.",
-		"276-FWD/REV ADC Swap.",
-		"280-XVTR Offs/Mult"
-},
-{ // 9
-		"281-XVTR Offset",
-		"P01-2200m 5W PWR Adjust",
-		"P02-630m  5W PWR Adjust",
-		"P03-160m  5W PWR Adjust",
-		"P04-80m   5W PWR Adjust",
-		"P05-60m   5W PWR Adjust"
-},
-{ // 10
-		"P06-40m   5W PWR Adjust",
-		"P07-30m   5W PWR Adjust",
-		"P08-20m   5W PWR Adjust",
-		"P09-17m   5W PWR Adjust",
-		"P10-15m   5W PWR Adjust",
-		"P11-12m   5W PWR Adjust"
-},
-{ // 11
-		"P12-10m   5W PWR Adjust",
-		"P13-6m    5W PWR Adjust",
-		"P14-4m    5W PWR Adjust",
-		"P15-2m    5W PWR Adjust",
-		"P16-70cm  5W PWR Adjust",
-		"P17-23cm  5W PWR Adjust"
-},
-{ // 12
-		"O01-2200m Full PWR Adjust",
-		"O02-630m  Full PWR Adjust",
-		"O03-160m  Full PWR Adjust",
-		"O04-80m   Full PWR Adjust",
-		"O05-60m   Full PWR Adjust",
-		"O06-40m   Full PWR Adjust"
-},
-{ // 13
-		"O07-30m   Full PWR Adjust",
-		"O08-20m   Full PWR Adjust",
-		"O09-17m   Full PWR Adjust",
-		"O10-15m   Full PWR Adjust",
-		"O11-12m   Full PWR Adjust",
-		"O12-10m   Full PWR Adjust"
-},
-{ // 14
-		"O13-6m    Full PWR Adjust",
-		"O14-4m    Full PWR Adjust",
-		"O15-2m    Full PWR Adjust",
-		"O16-70cm  Full PWR Adjust",
-		"O17-23cm  Full PWR Adjust",
-		"310-DSP NR BufLen"
-},
-{ // 15
-		"311-DSP NR FFT NumTaps",
-		"312-DSP NR Post-AGC",
-		"313-DSP Notch ConvRate",
-		"314-DSP Notch BufLen",
-		"315-DSP Notch FFTNumTap",
-		"320-NB  AGC T/C (<=Slow)"
-},
-{ // 16
-		"330-AM  TX Audio Filter",
-		"331-SSB TX Audio Filter",
-		"335-Tune Power Level",
-		"340-FFT Windowing",
-		"341-Reset Ser EEPROM",
-		"DSP NR (EXPERIMENTAL)"
-},
-{ // 17
-		"400-CAT-IQ-FREQ-XLAT",
-		" ",
-		" ",
-		" ",
-		" ",
-		" "
-}
+struct  MenuGroupDescriptor_s;
+
+// items are stored in RAM
+// Each menu group has to have a MenuGroupItem pointing to the descriptor
+// a MenuGroupItem is used to keep track of the fold/unfold state and to link the
+// Descriptors are stored in flash
+
+typedef struct {
+  const uint16_t menuId; // backlink to the menu we are part of. That implies, an entry can only be part of a single menu group
+  const uint16_t kind; // use the enum defined above to indicate what this entry represents
+  const uint16_t number; // this is an identification number which is passed to the menu entry handled
+                         // for standard items it is the id of the value to be changed, intepretation is left to handler
+                         // MENU_GROUP: for menu groups this MUST BE the index in the menu group table, THIS IS USED INTERNALLY
+  const char id[4];      // this is a visual 3 letter identification which may be display, depending on the render approach
+  const char* label;     // this is the label which will be display, depending on the render approach
+} MenuDescriptor;
+
+typedef struct {
+  bool unfolded;            // runtime variable, tells if the user wants to have this groups items to be shown
+  uint16_t count;           // number of menu entries. This will be filled automatically on first use by internal code
+                            // do not write to this variable unless you know what you are doing.
+  const MenuDescriptor* me; // pointer to the MenuDescriptor of this menu group in its parent menu. This is the backlink to our parent.
+                            // This will be filled automatically on first use by internal code in order to avoid search through the menu structure.
+                            // do not write to this variable unless you know what you are doing.
+} MenuGroupState;
+
+
+// This data structure is intended to be placed in flash
+// all data is placed here at compile time
+typedef struct MenuGroupDescriptor_s {
+  const MenuDescriptor* entries;          // array of member entries in the menu group
+  MenuGroupState* state;                  // writable data structure for menu management, pointer has to go into RAM
+  const MenuDescriptor* parent;           // pointer to the first element of the array in which our menu group is located in. It does not have
+                                          // to point to the MENU_GROUP item, wich can be at any position in this array. Used to calculate the real
+                                          // pointer later and to identify the parent menu group of this menu.
+                                          // use NULL for top level menus here (i.e. no parent).
+} MenuGroupDescriptor;
+
+
+// Runtime management of menu entries for onscreen rendering.
+typedef struct {
+  const MenuDescriptor* entryItem;
+} MenuDisplaySlot;
+
+// we show MENUSIZE items at the same time to the user.
+// right now the render code uses this global variable since
+// only a single active menu is supported right now.
+MenuDisplaySlot menu[MENUSIZE];
+
+
+/*
+ * How to create a new menu entry in an existig menu:
+ * - Copy an existing entry of MENU_KIND and paste at the desired position
+ * - Just assign a unique number to the "number" attribute
+ * - Change the label, and implement handling
+ *
+ * How to create a menu group:
+ * - Add menu group id entry to enum below
+ * - Create a MenuDescriptor Array with the desired entries, make sure to have the MENU_STOP element at last position
+ *   and that all elements have the enum value as first attribute (menuId)
+ * - Added the menu group entry in the parent menu descriptor array.
+ * - Create a MenuState element
+ * - Added the menu group descriptor to the groups list at the position corresponding to the enum value
+ *   using the descriptor array, the address of the MenuState and the address of the parent menu descriptor array.
+ *
+ *
+ */
+
+// ATTENTION: The numbering here has to be match in the groups
+// data structure found more or less at the end of this
+// menu definition block ! Otherwise menu display will not work
+// as expected and may crash mcHF
+// If you move menus around, make sure to change the groups structure of the move
+// menu to reflect the new parent menu!
+
+enum MENU_GROUP_ITEM {
+  MENU_TOP  = 0,
+  MENU_BASE,
+  MENU_CONF,
+  MENU_POW,
+  MENU_FILTER,
+  MENU_HWINFO,
+  MENU_CW,
+  MENU_DISPLAY,
 };
 
-static const char* filter_list_300Hz[] =      {
-    "  OFF",
-    "500Hz",
-    "550Hz",
-    "600Hz",
-    "650Hz",
-    "700Hz",
-    "750Hz",
-    "800Hz",
-    "850Hz",
-    "900Hz"
-} ;
+const MenuDescriptor topGroup[] = {
+    { MENU_TOP, MENU_GROUP, MENU_BASE, "STD","Standard Menu"},
+    { MENU_TOP, MENU_GROUP, MENU_CONF, "CON","Configuration Menu"},
+    { MENU_TOP, MENU_GROUP, MENU_DISPLAY, "DIS","Display Menu"},
+    { MENU_TOP, MENU_GROUP, MENU_CW,"CW ","CW Mode Settings"},
+    { MENU_TOP, MENU_GROUP, MENU_FILTER, "FIL","Filter Selection" },
+    { MENU_TOP, MENU_GROUP, MENU_POW, "POW","Power Adjust" },
+    { MENU_TOP, MENU_GROUP, MENU_HWINFO,"INF","Hardware Info"},
+    { MENU_TOP, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_500Hz[] =      {
-    "  OFF",
-	"550Hz",
-	"650Hz",
-	"750Hz",
-	"850Hz",
-	"950Hz"
-} ;
+const MenuDescriptor baseGroup[] = {
+    { MENU_BASE, MENU_ITEM, MENU_DSP_NR_STRENGTH, "010","DSP NR Strength" },
+    { MENU_BASE, MENU_ITEM, MENU_SSB_NARROW_FILT,"029","CW Filt in SSB Mode"},
+    { MENU_BASE, MENU_ITEM, MENU_AM_DISABLE,"030","AM Mode"},
+    { MENU_BASE, MENU_ITEM, MENU_SSB_AUTO_MODE_SELECT,"031","LSB/USB Auto Select"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_MODE_ENABLE,"040","FM Mode"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_GEN_SUBAUDIBLE_TONE,"041","FM Sub Tone Gen"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_DET_SUBAUDIBLE_TONE,"042","FM Sub Tone Det"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_TONE_BURST_MODE,"043","FM Tone Burst"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_RX_BANDWIDTH,"044","FM RX Bandwidth"},
+    { MENU_BASE, MENU_ITEM, MENU_FM_DEV_MODE,"045","FM Deviation"},
+    { MENU_BASE, MENU_ITEM, MENU_AGC_MODE,"050","AGC Mode"},
+    { MENU_BASE, MENU_ITEM, MENU_RF_GAIN_ADJ,"051","RF Gain"},
+    { MENU_BASE, MENU_ITEM, MENU_CUSTOM_AGC,"052","Cust AGC (+=Slower)"},
+    { MENU_BASE, MENU_ITEM, MENU_CODEC_GAIN_MODE,"053","RX Codec Gain"},
+    { MENU_BASE, MENU_ITEM, MENU_NOISE_BLANKER_SETTING,"054","RX NB Setting"},
+    { MENU_BASE, MENU_ITEM, MENU_RX_FREQ_CONV,"055","RX/TX Freq Xlate"},
+    { MENU_BASE, MENU_ITEM, MENU_MIC_LINE_MODE,"060","Mic/Line Select"},
+    { MENU_BASE, MENU_ITEM, MENU_MIC_GAIN,"061","Mic Input Gain"},
+    { MENU_BASE, MENU_ITEM, MENU_LINE_GAIN,"062","Line Input Gain"},
+    { MENU_BASE, MENU_ITEM, MENU_ALC_RELEASE,"063","ALC Release Time"},
+    { MENU_BASE, MENU_ITEM, MENU_ALC_POSTFILT_GAIN,"064","TX PRE ALC Gain"},
+    { MENU_BASE, MENU_ITEM, MENU_TX_COMPRESSION_LEVEL,"065","TX Audio Compress"},
+    { MENU_BASE, MENU_ITEM, MENU_TCXO_MODE,"090","TCXO Off/On/Stop"},
+    { MENU_BASE, MENU_ITEM, MENU_TCXO_C_F,"091","TCXO Temp. (C/F)"},
+    { MENU_BASE, MENU_ITEM, MENU_BACKUP_CONFIG,"197","Backup Config"},
+    { MENU_BASE, MENU_ITEM, MENU_RESTORE_CONFIG,"198","Restore Config"},
+    { MENU_BASE, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_1P8KHz[] =      {
-    "   OFF",
-	"1125Hz",
-	"1275Hz",
-	"1427Hz",
-	"1575Hz",
-	"1725Hz",
-	"   LPF"
-} ;
+const MenuDescriptor displayGroup[] = {
+    { MENU_DISPLAY, MENU_ITEM, CONFIG_LCD_AUTO_OFF_MODE,"090","LCD Auto Blank"},
+    { MENU_DISPLAY, MENU_ITEM, CONFIG_FREQ_STEP_MARKER_LINE,"091","Step Size Marker"},
+    { MENU_DISPLAY, MENU_ITEM, CONFIG_DISP_FILTER_BANDWIDTH,"092","Filter BW Display"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SPEC_SCOPE_SPEED,"100","Spec Scope 1/Speed"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_FILTER_STRENGTH,"101","Spec/Wfall Filter"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_TRACE_COLOUR,"102","Spec. Trace Colour"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_GRID_COLOUR,"103","Spec. Grid Colour"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_SCALE_COLOUR,"104","Spec/Wfall ScaleClr"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_MAGNIFY,"105","Spec/Wfall 2x Magn"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_AGC_ADJUST,"106","Spec/Wfall AGC Adj."},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_DB_DIVISION,"107","Spec Scope Ampl."},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_CENTER_LINE_COLOUR,"108","Spec/Wfall Line"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_MODE,"109","Scope/Waterfall"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_COLOR_SCHEME,"110","Wfall Colours"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_STEP_SIZE,"111","Wfall Step Size"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_OFFSET,"112","Wfall Brightness"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_CONTRAST,"113","Wfall Contrast"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_SPEED,"114","Wfall 1/Speed"},
+    { MENU_DISPLAY, MENU_ITEM, MENU_SCOPE_NOSIG_ADJUST,"115","Scope NoSig Adj."},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_NOSIG_ADJUST,"116","Wfall NoSig Adj."},
+    { MENU_DISPLAY, MENU_ITEM, MENU_WFALL_SIZE,"117","Wfall Size"},
+    { MENU_DISPLAY, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_2P3KHz[] =      {
-    "   OFF",
-	"1262Hz",
-	"1412Hz",
-	"1562Hz",
-	"1712Hz",
-	"   LPF"
-} ;
+const MenuDescriptor cwGroup[] = {
+    { MENU_CW, MENU_ITEM, MENU_CW_WIDE_FILT,"028","Wide Filt in CW Mode"},
+    { MENU_CW, MENU_ITEM, MENU_KEYER_MODE,"070","CW Keyer Mode"},
+    { MENU_CW, MENU_ITEM, MENU_KEYER_SPEED,"071","CW Keyer Speed"},
+    { MENU_CW, MENU_ITEM, MENU_SIDETONE_GAIN,"072","CW Sidetone Gain"},
+    { MENU_CW, MENU_ITEM, MENU_SIDETONE_FREQUENCY,"073","CW Side/Off Freq"},
+    { MENU_CW, MENU_ITEM, MENU_PADDLE_REVERSE,"074","CW Paddle Reverse"},
+    { MENU_CW, MENU_ITEM, MENU_CW_TX_RX_DELAY,"075","CW TX->RX Delay"},
+    { MENU_CW, MENU_ITEM, MENU_CW_OFFSET_MODE,"076","CW Freq. Offset"},
+    { MENU_CW, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_2P7KHz[] =      {
-    "   OFF",
-	"   LPF",
-	"   BPF"
-} ;
+const MenuDescriptor confGroup[] = {
+    { MENU_CONF, MENU_ITEM, CONFIG_STEP_SIZE_BUTTON_SWAP,"201","Step Button Swap"},
+    { MENU_CONF, MENU_ITEM, CONFIG_BAND_BUTTON_SWAP,"202","Band+/- Button Swap"},
+    { MENU_CONF, MENU_ITEM, CONFIG_TX_DISABLE,"203","Transmit Disable"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AUDIO_MAIN_SCREEN_MENU_SWITCH,"204","Menu SW on TX disable"},
+    { MENU_CONF, MENU_ITEM, CONFIG_MUTE_LINE_OUT_TX,"205","Mute Line Out TX"},
+    { MENU_CONF, MENU_ITEM, CONFIG_TX_AUDIO_MUTE,"206","TX Mute Delay"},
+    { MENU_CONF, MENU_ITEM, CONFIG_VOLTMETER_CALIBRATION,"208","Voltmeter Cal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_MAX_VOLUME,"210","Max Volume"},
+    { MENU_CONF, MENU_ITEM, CONFIG_MAX_RX_GAIN,"211","Max RX Gain (0=Max)"},
+    { MENU_CONF, MENU_ITEM, CONFIG_BEEP_ENABLE,"212","Key Beep"},
+    { MENU_CONF, MENU_ITEM, CONFIG_BEEP_FREQ,"213","Beep Frequency"},
+    { MENU_CONF, MENU_ITEM, CONFIG_BEEP_LOUDNESS,"214","Beep Volume"},
+    { MENU_CONF, MENU_ITEM, CONFIG_CAT_ENABLE,"220","CAT Mode"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FREQUENCY_CALIBRATE,"230","Freq. Calibrate"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FREQ_LIMIT_RELAX,"231","Freq. Limit Disable"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FREQ_MEM_LIMIT_RELAX,"232","MemFreq Lim Disable"},
+    { MENU_CONF, MENU_ITEM, CONFIG_LSB_RX_IQ_GAIN_BAL,"240","LSB RX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_LSB_RX_IQ_PHASE_BAL,"241","LSB RX IQ Phase"},
+    { MENU_CONF, MENU_ITEM, CONFIG_USB_RX_IQ_GAIN_BAL,"242","USB RX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_USB_RX_IQ_PHASE_BAL,"243","USB RX IQ Phase"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AM_RX_GAIN_BAL,"244","AM  RX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FM_RX_GAIN_BAL,"245","FM  RX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_LSB_TX_IQ_GAIN_BAL,"250","LSB TX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_LSB_TX_IQ_PHASE_BAL,"251","LSB TX IQ Phase"},
+    { MENU_CONF, MENU_ITEM, CONFIG_USB_TX_IQ_GAIN_BAL,"252","USB TX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_USB_TX_IQ_PHASE_BAL,"253","USB TX IQ Phase"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AM_TX_GAIN_BAL,"254","AM  TX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FM_TX_GAIN_BAL,"255","FM  TX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_CW_PA_BIAS,"260","CW PA Bias (If >0 )"},
+    { MENU_CONF, MENU_ITEM, CONFIG_PA_BIAS,"261","PA Bias"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_PWR_DISP,"270","Disp. Pwr (mW)"},
+    { MENU_CONF, MENU_ITEM, CONFIG_RF_FWD_PWR_NULL,"271","Pwr. Det. Null"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_2200M_ADJ,"C01","2200m Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_630M_ADJ,"C02","630m Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_160M_ADJ,"C03","160m Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_80M_ADJ,"C04","80m  Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_40M_ADJ,"C05","40m  Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_20M_ADJ,"C06","20m  Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_15M_ADJ,"C07","15m  Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_6M_ADJ,"C08","6m   Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_2M_ADJ,"C09","2m   Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_70CM_ADJ,"C10","70cm Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_COUPLING_23CM_ADJ,"C11","23cm Coupling Adj."},
+    { MENU_CONF, MENU_ITEM, CONFIG_FWD_REV_SENSE_SWAP,"276","FWD/REV ADC Swap."},
+    { MENU_CONF, MENU_ITEM, CONFIG_XVTR_OFFSET_MULT,"280","XVTR Offs/Mult"},
+    { MENU_CONF, MENU_ITEM, CONFIG_XVTR_FREQUENCY_OFFSET,"281","XVTR Offset"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NR_DECORRELATOR_BUFFER_LENGTH,"310","DSP NR BufLen"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NR_FFT_NUMTAPS,"311","DSP NR FFT NumTaps"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NR_POST_AGC_SELECT,"312","DSP NR Post-AGC"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_CONVERGE_RATE,"313","DSP Notch ConvRate"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_DECORRELATOR_BUFFER_LENGTH,"314","DSP Notch BufLen"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_FFT_NUMTAPS,"315","DSP Notch FFTNumTap"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AGC_TIME_CONSTANT,"320","NB  AGC T/C (<=Slow)"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AM_TX_FILTER_ENABLE,"330","AM  TX Audio Filter"},
+    { MENU_CONF, MENU_ITEM, CONFIG_SSB_TX_FILTER_ENABLE,"331","SSB TX Audio Filter"},
+    { MENU_CONF, MENU_ITEM, CONFIG_FFT_WINDOW_TYPE,"340","FFT Windowing"},
+    { MENU_CONF, MENU_ITEM, CONFIG_RESET_SER_EEPROM,"341","Reset Ser EEPROM"},
+    { MENU_CONF, MENU_ITEM, CONFIG_DSP_ENABLE,"530","DSP NR (EXPERIMENTAL)"},
+    { MENU_CONF, MENU_ITEM, CONFIG_CAT_XLAT,"400","CAT-IQ-FREQ-XLAT"},
+    { MENU_CONF, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_2P9KHz[] =      {
-    "   OFF",
-	"   LPF",
-	"   BPF"
-} ;
+const MenuDescriptor powGroup[] = {
+    { MENU_POW, MENU_ITEM, CONFIG_TUNE_POWER_LEVEL,"P00","Tune Power Level"},
+    { MENU_POW, MENU_ITEM, CONFIG_2200M_5W_ADJUST,"P01","2200m 5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_630M_5W_ADJUST,"P02","630m  5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_160M_5W_ADJUST,"P03","160m  5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_80M_5W_ADJUST,"P04","80m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_60M_5W_ADJUST,"P05","60m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_40M_5W_ADJUST,"P06","40m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_30M_5W_ADJUST,"P07","30m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_20M_5W_ADJUST,"P08","20m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_17M_5W_ADJUST,"P09","17m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_15M_5W_ADJUST,"P10","15m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_12M_5W_ADJUST,"P11","12m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_10M_5W_ADJUST,"P12","10m   5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_6M_5W_ADJUST,"P13","6m    5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_4M_5W_ADJUST,"P14","4m    5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_2M_5W_ADJUST,"P15","2m    5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_70CM_5W_ADJUST,"P16","70cm  5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_23CM_5W_ADJUST,"P17","23cm  5W PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_2200M_FULL_POWER_ADJUST,"O01","2200m Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_630M_FULL_POWER_ADJUST,"O02","630m  Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_160M_FULL_POWER_ADJUST,"O03","160m  Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_80M_FULL_POWER_ADJUST,"O04","80m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_60M_FULL_POWER_ADJUST,"O05","60m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_40M_FULL_POWER_ADJUST,"O06","40m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_30M_FULL_POWER_ADJUST,"O07","30m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_20M_FULL_POWER_ADJUST,"O08","20m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_17M_FULL_POWER_ADJUST,"O09","17m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_15M_FULL_POWER_ADJUST,"O10","15m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_12M_FULL_POWER_ADJUST,"O11","12m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_10M_FULL_POWER_ADJUST,"O12","10m   Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_6M_FULL_POWER_ADJUST,"O13","6m    Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_4M_FULL_POWER_ADJUST,"O14","4m    Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_2M_FULL_POWER_ADJUST,"O15","2m    Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_70CM_FULL_POWER_ADJUST,"O16","70cm  Full PWR Adjust"},
+    { MENU_POW, MENU_ITEM, CONFIG_23CM_FULL_POWER_ADJUST,"O17","23cm  Full PWR Adjust"},
+    { MENU_POW, MENU_STOP, 0, "   " , NULL }
+};
 
-static const char* filter_list_3P6KHz[] =      {
-    "   OFF",
-	"   LPF",
-	"   BPF"
-} ;
+const MenuDescriptor filterGroup[] = {
+    { MENU_FILTER, MENU_ITEM, MENU_300HZ_SEL,"500","300Hz Center Freq."  },
+    { MENU_FILTER, MENU_ITEM, MENU_500HZ_SEL,"501","500Hz Center Freq."},
+    { MENU_FILTER, MENU_ITEM, MENU_1K4_SEL,"502","1.4k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_1K6_SEL,"503","1.6k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_1K8_SEL,"504","1.8k Center Freq."},
+    { MENU_FILTER, MENU_ITEM, MENU_2K1_SEL,"505","2.1k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_2K3_SEL,"506","2.3k Center Freq."},
+    { MENU_FILTER, MENU_ITEM, MENU_2K5_SEL,"507","2.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_2K7_SEL,"508","2.7k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_2K9_SEL,"509","2.9k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_3K2_SEL,"510","3.2k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_3K4_SEL,"511","3.4k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_3K6_SEL,"512","3.6k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_3K8_SEL,"513","3.8k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_4K0_SEL,"514","4.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_4K2_SEL,"515","4.2k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_4K4_SEL,"516","4.4k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_4K6_SEL,"517","4.6k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_4K8_SEL,"518","4.8k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_5K0_SEL,"519","5.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_5K5_SEL,"520","5.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_6K0_SEL,"521","6.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_6K5_SEL,"522","6.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_7K0_SEL,"523","7.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_7K5_SEL,"524","7.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_8K0_SEL,"525","8.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_8K5_SEL,"526","8.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_9K0_SEL,"527","9.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_9K5_SEL,"528","9.5k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_10K0_SEL,"529","10.0k Filter"},
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SEL,"FPA","FilterPath (exp.)"  },
+    { MENU_FILTER, MENU_STOP, 0, "   " , NULL }
+};
+
+enum MENU_INFO_ITEM {
+  INFO_EEPROM,
+  INFO_DISPLAY,
+  INFO_SI570,
+  INFO_TP,
+  INFO_RFMOD,
+  INFO_VHFUHFMOD
+
+
+};
+
+const MenuDescriptor infoGroup[] = {
+    { MENU_HWINFO, MENU_INFO, INFO_DISPLAY,"I01","Display"},
+    { MENU_HWINFO, MENU_INFO, INFO_SI570,"I02","SI570"},
+    { MENU_HWINFO, MENU_INFO, INFO_EEPROM,"I03","EEPROM"},
+    { MENU_HWINFO, MENU_INFO, INFO_TP,"I04","Touchscreen"},
+    { MENU_HWINFO, MENU_INFO, INFO_RFMOD,"I05","RF Bands Mod"},
+    { MENU_HWINFO, MENU_INFO, INFO_VHFUHFMOD,"I06","V/UHF Mod"},
+    { MENU_HWINFO, MENU_STOP, 0, "   " , NULL }
+};
+
+
+MenuGroupState topGroupState;
+MenuGroupState baseGroupState;
+MenuGroupState confGroupState;
+MenuGroupState powGroupState;
+MenuGroupState filterGroupState;
+MenuGroupState infoGroupState;
+MenuGroupState cwGroupState;
+MenuGroupState displayGroupState;
+
+
+const MenuGroupDescriptor groups[] = {
+    { topGroup, &topGroupState, NULL},  // Group 0
+    { baseGroup, &baseGroupState, topGroup},  // Group 1
+    { confGroup, &confGroupState, topGroup},  // Group 3
+    { powGroup, &powGroupState, topGroup },  // Group 4
+    { filterGroup, &filterGroupState, topGroup },  // Group 5
+    { infoGroup, &infoGroupState, topGroup },  // Group 6
+    { cwGroup, &cwGroupState, topGroup },  // Group 7
+    { displayGroup, &displayGroupState, topGroup },  // Group 8
+};
+
+// actions [this is an internal, not necessarily complete or accurate sketch of the used algorithms /API
+// read the source to find out how it is done. Left for the purpose of explaining the basic idea
+// show menu -> was previously displayed -> yes -> simply display all slots
+//                                       -> no  -> get first menu group, get first entry, fill first slot, run get next entry until all slots are filled
+
+// find next MenuEntry -> is menu group -> yes -> is unfolded -> yes -> get first item from menu group
+//                                                            -> no  -> treat as normal menu entry
+//                                      -> is there one more entry in my menu group ? -> yes -> takes this one
+//                                                                                      -> no  -> go one level up -> get next entry in this group
+//                     -> there is no such entry -> fill with dummy entry
+
+// find prev MenuEntry -> there is prev entry in menu group -> yes -> is this unfolded menu group -> yes -> get last entry of this menu group
+//                                                                                                -> no  -> fill slot with entry
+//                                                          -> no  -> go one level up -> get prev entry of this level
+
+// unfold menu group -> mark as unfold, run get next entry until all menu display slots are filled
+// fold menu group   -> mark as fold,   run get next entry until all menu display slots are filled
+
+// move to next/previous page -> (this is n times prev/next)
+
+// ===================== BEGIN MENU LOW LEVEL MANAGEMENT =====================
+const MenuGroupDescriptor* UiMenu_GetParentGroupForEntry(const MenuDescriptor* me) {
+    return me==NULL?NULL:&groups[me->menuId];
+}
+
+const MenuGroupDescriptor* UiMenu_GetGroupForGroupEntry(const MenuDescriptor* me) {
+    return me==NULL?NULL:&groups[me->number];
+}
+
+
+inline bool UiMenu_IsGroup(const MenuDescriptor *entry) {
+  return entry==NULL?false:entry->kind == MENU_GROUP;
+}
+inline bool UiMenu_IsItem(const MenuDescriptor *entry) {
+  return entry==NULL?false:entry->kind == MENU_ITEM;
+}
+inline bool UiMenu_IsInfo(const MenuDescriptor *entry) {
+  return entry==NULL?false:entry->kind == MENU_INFO;
+}
+
+
+inline bool UiMenu_SlotIsEmpty(MenuDisplaySlot* slot) {
+  return slot==NULL?false:slot->entryItem == NULL;
+}
+inline bool UiMenu_GroupIsUnfolded(const MenuDescriptor *group) {
+  return group==NULL?false:groups[group->number].state->unfolded;
+}
+inline uint16_t UiMenu_MenuGroupMemberCount(const MenuGroupDescriptor* gd) {
+  uint16_t retval = 0;
+  if (gd != NULL) {
+  if (gd->state->count == 0) {
+    const MenuDescriptor* entry;
+    for (entry = gd->entries;entry->kind != MENU_STOP; entry++) {
+      gd->state->count++;
+    }
+  }
+  retval = gd->state->count;
+  }
+  return retval;
+}
+
+inline void UiMenu_GroupFold(const MenuDescriptor* entry, bool fold) {
+  if (UiMenu_IsGroup(entry)) {
+    groups[entry->number].state->unfolded = fold == false;
+  }
+}
+
+inline const MenuDescriptor* UiMenu_GroupGetLast(const MenuGroupDescriptor *group) {
+  const MenuDescriptor* retval = NULL;
+  uint16_t count = UiMenu_MenuGroupMemberCount(group);
+  if (count>0) {
+    retval = &(group->entries[count-1]);
+  }
+  return retval;
+}
+
+inline const MenuDescriptor* UiMenu_GroupGetFirst(const MenuGroupDescriptor *group) {
+  const MenuDescriptor* retval = NULL;
+  uint16_t count = UiMenu_MenuGroupMemberCount(group);
+  if (count>0) {
+    retval = group->entries;
+  }
+  return retval;
+}
+
+const MenuDescriptor* UiMenu_GetNextEntryInGroup(const MenuDescriptor* me) {
+  const MenuDescriptor* retval = NULL;
+
+  if (me != NULL) {
+    const MenuGroupDescriptor* group_ptr = UiMenu_GetParentGroupForEntry(me);
+    if (UiMenu_GroupGetLast(group_ptr)> me) {
+      retval = me + 1;
+    }
+  }
+  return retval;
+}
+
+const MenuDescriptor* UiMenu_GetPrevEntryInGroup(const MenuDescriptor* me) {
+  const MenuGroupDescriptor* group_ptr = UiMenu_GetParentGroupForEntry(me);
+  const MenuDescriptor* retval = NULL;
+  if (me != NULL && me != &group_ptr->entries[0]) {
+    retval = me - 1;
+  }
+  return retval;
+}
+
+
+
+const MenuDescriptor* UiMenu_GetParentForEntry(const MenuDescriptor* me) {
+  const MenuDescriptor* retval = NULL;
+  if (me != NULL) {
+    const MenuGroupDescriptor* gd = UiMenu_GetParentGroupForEntry(me);
+    if (gd->parent != NULL) {
+      if (gd->state->me == NULL ) {
+        const MenuGroupDescriptor* gdp = &groups[gd->parent->menuId];
+        uint16_t count = UiMenu_MenuGroupMemberCount(gdp);
+        uint16_t idx;
+        for(idx = 0; idx < count; idx++) {
+          if ((gdp->entries[idx].kind == MENU_GROUP) && (gdp->entries[idx].number == me->menuId)) {
+            gd->state->me = &gdp->entries[idx];
+            break;
+          }
+        }
+      }
+      retval = gd->state->me;
+    }
+  }
+  return retval;
+}
+
+inline bool UiMenu_IsLastInMenuGroup(const MenuDescriptor* here) {
+  const MenuGroupDescriptor* gd = UiMenu_GetParentGroupForEntry(here);
+  return UiMenu_GroupGetLast(gd) == here;
+}
+inline bool UiMenu_IsFirstInMenuGroup(const MenuDescriptor* here) {
+  const MenuGroupDescriptor* gd = UiMenu_GetParentGroupForEntry(here);
+  return UiMenu_GroupGetFirst(gd) == here;
+}
+
+
+// ===================== END MENU LOW LEVEL MANAGEMENT =====================
+
+
+// ===================== BEGIN MENU ITERATION STRATEGY =====================
+// this code implements a specific strategy to walk through a menu structure
+
+// Helper Functions
+const MenuDescriptor* UiMenu_FindNextEntryInUpperLevel(const MenuDescriptor* here) {
+  const MenuDescriptor* next = NULL, *focus = here;
+  if (here != NULL) {
+    while(focus != NULL && next == NULL) {
+      // we have a parent group, we are member of a sub menu group,
+      // we need next entry in containing menu group, no matter if our menu group is folded or not
+      next = UiMenu_GetNextEntryInGroup(UiMenu_GetParentForEntry(focus));
+      if (next == NULL) {
+        focus = UiMenu_GetParentForEntry(focus);
+      }
+    }
+  }
+  return next;
+}
+
+const MenuDescriptor* UiMenu_FindLastEntryInLowerLevel(const MenuDescriptor* here) {
+  const MenuDescriptor *last = here;
+  while (UiMenu_IsGroup(here) && UiMenu_GroupIsUnfolded(here) && here == last) {
+    const MenuDescriptor* last = UiMenu_GroupGetLast(UiMenu_GetGroupForGroupEntry(here));
+    if (last) { here = last; }
+  }
+  return here;
+}
+
+
+// Main Strategy  Functions
+/*
+ * Strategy: Provide a 'virtual' flat list of menu entries, list members are dynamically inserted/removed if menu groups are (un)folded.
+ * External code navigates through only with next/prev operations.
+ *
+ */
+/*
+ * @brief Get next menu entry. If a menu group is unfolded, next entry after menu group item is first item from menu group
+ *
+ */
+const MenuDescriptor* UiMenu_NextMenuEntry(const MenuDescriptor* here) {
+  const MenuDescriptor* next = NULL;
+
+  if (here != NULL) {
+    if (UiMenu_IsGroup(here)) {
+      // is group entry
+
+      if (UiMenu_GroupIsUnfolded(here)) {
+        const MenuGroupDescriptor* group = &groups[here->number];
+        next = UiMenu_GroupGetFirst(group);
+        if (next == NULL) {
+          // this is an empty menu group, should not happen, does make  sense
+          // but we handle this anyway
+          next = UiMenu_FindNextEntryInUpperLevel(here);
+        }
+      } else {
+        // folded group, so we behave  like a normal entry
+        next = UiMenu_GetNextEntryInGroup(here);
+      }
+    }
+    if (next == NULL) {
+      // we are currently at a normal entry or a folded group or empty group (in this case these are treated as simple entries)
+      // only 3 cases possible:
+      //   - final entry of menu, fill next slot with blank entry, return false
+      //   - next entry is normal entry (group or entry, no difference), just use this one
+      //   - last entry in menu group, go up, and search for next entry in this parent menu (recursively).
+
+      if (UiMenu_IsLastInMenuGroup(here)) {
+        // we need the parent menu in order to ask for the  entry after our
+        // menu group entry
+        // if we cannot find the parent group, we  are top level and the last menu entry
+        // so there is no further entry
+        next = UiMenu_FindNextEntryInUpperLevel(here);
+      } else {
+        next =  UiMenu_GetNextEntryInGroup(here);
+      }
+    }
+  }
+  return next;
+}
+
+
+/*
+ * @brief Get previous menu entry. If on first item of a menu group, show the last entry of the previous menu group/menu item
+ *
+ */
+const MenuDescriptor* UiMenu_PrevMenuEntry(const MenuDescriptor* here) {
+  const MenuDescriptor* prev = NULL;
+
+
+  if (here != NULL) {
+    if (UiMenu_IsFirstInMenuGroup(here)) {
+      // we go up, get previous entry
+      // if first entry,  go one further level up, ...
+      //  if not first entry -> get prev entry
+      //     if normal entry or folded menu -> we are done
+      //     if unfolded menu_entry -> go to last entry
+      //           -> if normal entry or folded menu -> we are done
+      //           -> if unfolded menu entry -> go to last entry
+      prev = UiMenu_GetParentForEntry(here);
+    }
+    else {
+      prev = UiMenu_GetPrevEntryInGroup(here);
+      if (UiMenu_IsGroup(prev) && UiMenu_GroupIsUnfolded(prev)) {
+        prev = UiMenu_FindLastEntryInLowerLevel(prev);
+      }
+    }
+  }
+  return prev;
+}
+
+
+
+bool UiMenu_FillSlotWithEntry(MenuDisplaySlot* here, const MenuDescriptor* entry) {
+  bool retval = false;
+  if (entry != NULL) {
+    here->entryItem = entry;
+    retval = true;
+  } else {
+    here->entryItem = NULL;
+  }
+  return retval;
+}
+
+// DISPLAY SPECIFIC CODE BEGIN
+static void UiMenu_DisplayValue(const char* value,uint32_t clr,uint16_t pos) {
+  UiLcdHy28_PrintTextRight(POS_MENU_CURSOR_X - 4, POS_MENU_IND_Y + (pos * 12), value, clr, Black, 0);       // yes, normal position
+}
+static void UiMenu_DisplayLabel(const char* label,uint32_t clr,uint16_t pos) {
+  UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+(12*(pos)),label,clr,Black,0);
+}
+static void UiMenu_DisplayCursor(const char* label,uint32_t clr,uint16_t pos) {
+  UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y+(12*(pos)),label,clr,Black,0);
+}
+// DISPLAY SPECIFIC CODE END
+
+
+static void UiMenu_MoveCursor(uint32_t newpos) {
+  static uint32_t oldpos = 999;  // y position of option cursor, previous
+  if(oldpos != 999) {       // was the position of a previous cursor stored?
+    UiMenu_DisplayCursor(" ", Green, oldpos);
+  }
+  oldpos = newpos;   // save position of new "old" cursor position
+  if (newpos != 999) {
+    UiMenu_DisplayCursor("<", Green, newpos);
+  }
+}
+
+
+void UiMenu_UpdateLines(uint16_t number, uint16_t mode, int pos) {
+  if (number < MAX_MENU_ITEM) {
+    UiDriverUpdateMenuLines(number,mode,pos);
+  } else {
+    UiDriverUpdateConfigMenuLines(number,mode,pos);
+  }
+}
+
+/*
+ * Render a menu entry on a given menu position
+ */
+void UiMenu_UpdateMenuEntry(const MenuDescriptor* entry, uchar mode, uint8_t pos)
+{
+  uint32_t  m_clr;
+  m_clr = Yellow;
+  char out[40];
+  const char blank[34] = "                               ";
+
+  if (entry != NULL && (entry->kind == MENU_ITEM || entry->kind == MENU_GROUP ||entry->kind == MENU_INFO) ) {
+    if (mode == 0) {
+      uint16_t level = 0;
+      const MenuDescriptor* parent = entry;
+      do {
+        parent = UiMenu_GetParentForEntry(parent);
+        level++;
+      } while (parent != NULL);
+      level--;
+
+      // level = 3;
+      // uint16_t labellen = strlen(entry->id)+strlen(entry->label) + 1;
+      uint16_t labellen = level+strlen(entry->label);
+      // snprintf(out,34,"%s-%s%s",entry->id,entry->label,(&blank[labellen>33?33:labellen]));
+      snprintf(out,34,"%s%s%s",(&blank[level>5?31-5:31-level]),entry->label,(&blank[labellen>33?33:labellen]));
+      UiMenu_DisplayLabel(out,m_clr,pos);
+    }
+    switch(entry->kind) {
+    case MENU_ITEM:
+      // TODO: Better Handler Selection with need for change in this location to add new handlers
+      UiMenu_UpdateLines(entry->number,mode,pos);
+      break;
+    case MENU_INFO:
+      UiMenu_UpdateHWInfoLines(entry->number,mode,pos);
+      break;
+    case MENU_GROUP:
+      if (mode == 1) {
+        bool old_state = UiMenu_GroupIsUnfolded(entry);
+        if (ts.menu_var < 0 ) { UiMenu_GroupFold(entry,true); }
+        if (ts.menu_var > 0 ) { UiMenu_GroupFold(entry,false); }
+        if (old_state != UiMenu_GroupIsUnfolded(entry)) {
+          int idx;
+          for (idx = pos+1; idx < MENUSIZE;idx++) {
+            UiMenu_FillSlotWithEntry(&menu[idx],UiMenu_NextMenuEntry(menu[idx-1].entryItem));
+            UiMenu_UpdateMenuEntry(menu[idx].entryItem, 0, idx);
+          }
+        }
+      }
+      strcpy(out,UiMenu_GroupIsUnfolded(entry)?"HIDE":"SHOW");
+      UiMenu_DisplayValue(out,m_clr,pos);
+      break;
+    }
+  } else {
+    UiMenu_DisplayLabel(blank,m_clr,pos);
+  }
+  if (mode == 1) {
+    UiMenu_MoveCursor(pos);
+  }
+}
+
+void UiMenu_DisplayInitSlots(const MenuDescriptor* entry) {
+  int idx;
+  for (idx=0;idx < MENUSIZE;idx++) {
+    UiMenu_FillSlotWithEntry(&menu[idx],entry);
+    entry = UiMenu_NextMenuEntry(entry);
+  }
+}
+void UiMenu_DisplayInitSlotsBackwards(const MenuDescriptor* entry) {
+  int idx;
+  for (idx=MENUSIZE;idx > 0;idx--) {
+    UiMenu_FillSlotWithEntry(&menu[idx-1],entry);
+    entry = UiMenu_PrevMenuEntry(entry);
+  }
+}
+
+/*
+ * @returns true if at least one slot was moved, false if no change done
+ */
+bool UiMenu_DisplayMoveSlotsBackwards(int16_t change) {
+  int idx;
+  int dist = (change % MENUSIZE);
+  int screens = change / MENUSIZE;
+  bool retval = false; // n
+  for (idx = 0; idx < screens; idx++) {
+    const MenuDescriptor *prev = UiMenu_PrevMenuEntry(menu[0].entryItem);
+    if (prev != NULL) {
+      retval = true;
+      UiMenu_DisplayInitSlotsBackwards(prev);
+    } else {
+      // we stop here, since no more previous elements.
+      // TODO: Decide if roll over, in this case we would have to get very last element and
+      // then continue from there.
+      dist = 0;
+      break;
+    }
+  }
+
+  if (dist != 0) {
+    retval = true;
+    for (idx = MENUSIZE-dist; idx > 0; idx--) {
+      UiMenu_FillSlotWithEntry(&menu[MENUSIZE-idx],menu[MENUSIZE-(dist+idx)].entryItem);
+    }
+
+    for (idx = MENUSIZE-dist;idx >0; idx--) {
+      UiMenu_FillSlotWithEntry(&menu[idx-1],UiMenu_PrevMenuEntry(menu[idx].entryItem));
+    }
+  }
+  return retval;
+}
+/*
+ * @returns true if at least one slot was moved, false if no change done
+ */
+bool UiMenu_DisplayMoveSlotsForward(int16_t change) {
+  int idx;
+  int dist = (change % MENUSIZE);
+  int screens = change / MENUSIZE;
+  bool retval = false;
+  // first jump screens. we have to iterate through the menu structure one by one
+  // in order to respect fold/unfold state etc.
+  for (idx = 0; idx < screens; idx++) {
+    const MenuDescriptor *next = UiMenu_NextMenuEntry(menu[MENUSIZE-1].entryItem);
+    if (next != NULL) {
+      UiMenu_DisplayInitSlots(next);
+      retval = true;
+    } else {
+      // stop here
+      // TODO: Rollover?
+      dist = 0;
+      break;
+    }
+  }
+  if (dist != 0) {
+    retval = true;
+    for (idx = 0; idx < MENUSIZE-dist; idx++) {
+      UiMenu_FillSlotWithEntry(&menu[idx],menu[dist+idx].entryItem);
+    }
+    for (idx = MENUSIZE-dist;idx < MENUSIZE; idx++) {
+      UiMenu_FillSlotWithEntry(&menu[idx],UiMenu_NextMenuEntry(menu[idx-1].entryItem));
+    }
+  }
+  return retval;
+}
+
+bool init_done = false;
+
+static void UiMenu_UpdateHWInfoLines(uchar index, uchar mode, int pos) {
+   char out[32];
+   const char* outs = NULL;
+   uint32_t m_clr = White;
+
+
+   static const char* display_types[] = {
+       " ",
+       "HY28A SPI Mode",
+       "HY28B SPI Mode",
+       "HY28A/B Para."
+   };
+
+   switch (index) {
+   case INFO_DISPLAY:
+     outs = display_types[ts.display_type];
+     break;
+   case INFO_SI570:
+   {
+     float suf = ui_si570_get_startup_frequency();
+     int vorkomma = (int)(suf);
+     int nachkomma = (int) roundf((suf-vorkomma)*10000);
+     snprintf(out,32,"%xh / %u.%04u MHz",(os.si570_address >> 1),vorkomma,nachkomma);
+     outs = out;
+   }
+   break;
+   case INFO_TP:
+     outs = (ts.tp_present == 0)?"n/a":"XPT2046";
+   break;
+   case INFO_RFMOD:
+     outs = (ts.rfmod_present == 0)?"n/a":"present";
+     break;
+   case INFO_VHFUHFMOD:
+        outs = (ts.vhfuhfmod_present == 0)?"n/a":"present";
+        break;
+   case INFO_EEPROM:
+   {
+     switch (ts.ser_eeprom_type){
+     case 0:  outs = "n/a"; break;
+     case 16: outs = "24xx512/64KB"; break;
+     case 17: outs = "24xx1025/128KB"; break;
+     case 18: outs = "24xx1026/128KB"; break;
+     case 19: outs = "24CM02/256KB"; break;
+     case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15:
+        outs = "incompatible"; break;
+     default: outs = "unknown"; break;
+     }
+     sprintf(out,"%s%s","Serial EEPROM: ",outs);
+    switch(ts.ser_eeprom_in_use) {
+    case 0: m_clr = Green; break; // in use & ok
+    case 0x05: // not ok
+    case 0x10: // too small
+      m_clr = Red;
+    }
+   }
+   break;
+   default:
+       outs = "NO INFO";
+   }
+
+   UiMenu_DisplayValue(outs,m_clr,pos);
+}
+
+/*
+ * @brief Display and change menu items
+ * @param mode   0=show all, 1=update current item, 3=restore default setting for selected item
+ *
+ */
+void UiMenu_RenderMenu(uint16_t mode) {
+  if (init_done == false ) {
+    UiMenu_DisplayInitSlots(groups[MENU_TOP].entries);
+    init_done = true;
+  }
+  // UiMenu_DisplayMoveSlotsForward(6);
+  // UiMenu_DisplayMoveSlotsForward(3);
+  // UiMenu_DisplayMoveSlotsBackwards(10);
+  switch (mode){
+  case 0: {// (re)draw all labels and values
+    int idx;
+    for (idx = 0; idx < MENUSIZE; idx++) {
+      UiMenu_UpdateMenuEntry(menu[idx].entryItem,mode, idx);
+    }
+  }
+  break;
+
+  case 3:
+  case 1:
+  {
+    // wrapping to next screen (and from end to start and vice versa)
+    if (ts.menu_item >= MENUSIZE) {
+      if (UiMenu_RenderNextScreen() == false) {
+        UiMenu_RenderFirstScreen();
+      }
+    } else if (ts.menu_item < 0) {
+      if (UiMenu_RenderPrevScreen() == false) {
+        UiMenu_RenderLastScreen();
+      }
+
+    }
+
+    ts.menu_item%=MENUSIZE;
+    if (ts.menu_item < 0) ts.menu_item+=MENUSIZE;
+
+    uint16_t current_item = ts.menu_item%MENUSIZE;
+    UiMenu_UpdateMenuEntry(menu[current_item].entryItem,mode, current_item);
+  }
+  break;
+  default:
+    break;
+  }
+}
 
 
 #define BandInfoGenerate(BAND,SUFFIX,NAME) { TX_POWER_FACTOR_##BAND##_DEFAULT, CONFIG_##BAND##SUFFIX##_5W_ADJUST, CONFIG_##BAND##SUFFIX##_FULL_POWER_ADJUST, BAND_FREQ_##BAND , BAND_SIZE_##BAND , NAME }
@@ -606,7 +1231,7 @@ bool __attribute__ ((noinline))  UiDriverMenuBandRevCouplingAdjust(int var, uint
 }
 
 
-void  __attribute__ ((noinline))  UiDriverMenuChangeFilter(uint8_t filter_id, bool changed) {
+static void  __attribute__ ((noinline))  UiDriverMenuChangeFilter(uint8_t filter_id, bool changed) {
 	if((ts.txrx_mode == TRX_MODE_RX) && (changed))	{	// set filter if changed
 		if(ts.filter_id == filter_id)	{
 			//UiDriverProcessActiveFilterScan();	// find next active filter
@@ -616,225 +1241,53 @@ void  __attribute__ ((noinline))  UiDriverMenuChangeFilter(uint8_t filter_id, bo
 	}
 }
 
-//
-//
-//
-//*----------------------------------------------------------------------------
-//* Function Name       : UiDriverUpdateMenu
-//* Object              : Display and change menu items
-//* Input Parameters    : mode:  0=update all, 1=update current item, 2=go to next screen, 3=restore default setting for selected item
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-//
-void UiDriverUpdateMenu(uchar mode)
-{
-	uchar var;
-	bool  update_vars;
-	static uchar screen_disp = 1;	// used to detect screen display switching and prevent unnecessary blanking
-	ulong	m_clr, c_clr;
-	static	int	menu_var_changed = 99;
-	uchar warn = 0;
-	int offset = 50;
 
-	m_clr = Yellow;
-	c_clr = Cyan;
-
-	update_vars = 0;
-
-if(mode > 3)
-    {
-    if(mode == 9)
-	{
-	char out[32];
-	char* outs;
-	m_clr = White;
-	int vorkomma = (int)(os.fout);
-	int nachkomma = (int) roundf((os.fout-vorkomma)*10000);
-	if(sd.use_spi)
-	    {
-	    if(sd.use_spi == 1)
-		outs = "HY28A SPI Mode  ";
-	    else
-		outs = "HY28B SPI Mode    ";
-	    }
-	else
-	    outs = "HY28A/B parallel  ";
-	sprintf(out,"%s%s","LCD Display  : ",outs);
-	UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+0,out,m_clr,Black,0);
-	sprintf(out,"%s%x%s%u%s%u%s","SI570        : ",(os.si570_address >> 1),"h / ",vorkomma,".",nachkomma,"MHz");
-	UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+12,out,m_clr,Black,0);
-	switch (ts.ser_eeprom_type){
-	    case 0:
-	    outs = "n/a             ";
-	    break;
-	    case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15:
-	    outs = "incompatible    ";
-	    break;
-	    case 16:
-	    outs = "24xx512     64KB";
-	    break;
-	    case 17:
-	    outs = "24xx1025   128KB";
-	    break;
-	    case 18:
-	    outs = "24xx1026   128KB";
-	    break;
-	    case 19:
-	    outs = "24CM02     256KB";
-	    break;
-	    default:
-	    outs = "unknown         ";
-	    break;
-	    }
-	sprintf(out,"%s%s","Serial EEPROM: ",outs);
-
-	if(ts.ser_eeprom_in_use == 0)		// in use & data ok
-	    UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+24,out,Green,Black,0);
-	if(ts.ser_eeprom_in_use == 0xFF)	// not in use
-	    UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+24,out,m_clr,Black,0);
-	if(ts.ser_eeprom_in_use == 0x5)		// data not ok
-	    UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+24,out,Red,Black,0);
-	if(ts.ser_eeprom_in_use == 0x10)	// EEPROM too small
-	    UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+24,out,Red,Black,0);
-
-	if(ts.tp_present == 0)
-	    outs = "n/a             ";
-	else
-	    outs = "XPT2046         ";
-	sprintf(out,"%s%s","Touchscreen  : ",outs);
-	UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+36,out,m_clr,Black,0);
-	if(ts.rfmod_present == 0)
-	    outs = "n/a             ";
-	else
-	    outs = "present         ";
-	sprintf(out,"%s%s","RF Bands Mod : ",outs);
-	UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+48,out,m_clr,Black,0);
-	if(ts.vhfuhfmod_present == 0)
-	    outs = "n/a             ";
-	else
-	    outs = "present         ";
-	sprintf(out,"%s%s","VHF/UHF Mod  : ",outs);
-	UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+60,out,m_clr,Black,0);
-	}
+static bool UiMenuHandleFilterConfig(int var, uint8_t mode, char* options, uint32_t* clr_ptr, uint8_t bwId) {
+  bool fchange = false;
+  if (bwId < AUDIO_FILTER_NUM) {
+    FilterDescriptor *filter = &FilterInfo[bwId];
+    if(ts.dmod_mode != DEMOD_FM)    {
+      fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_select[bwId],
+          0,
+          filter->configs_num-1,
+          filter->config_default,
+          1
+      );
+      if(ts.filter_id != bwId) {
+        *clr_ptr = Orange;
+      }
     }
-    else
-    {
-    	uint8_t old_screen_disp = screen_disp;
-    	if (ts.menu_item < MAX_MENU_ITEM)
-    	    screen_disp = 1+ (ts.menu_item / MENUSIZE);
-    	else
-    	    screen_disp = offset+1+ ((ts.menu_item - MAX_MENU_ITEM) / MENUSIZE);
+    else                // show disabled if in FM
+      *clr_ptr = Red;
 
-       	if(old_screen_disp != screen_disp)	// redraw if this screen wasn't already displayed
-       				UiDriverClearSpectrumDisplay();
-		update_vars = 1;
-
-
-
-	//
-	// ****************   Main Menu  ***************
-	//
-	if(ts.menu_item < MAX_MENU_ITEM)
-	    {		// Is this part of the main menu?
-	    int i;
-	    for (i=MENUSIZE*(screen_disp-1); i < MENUSIZE*(screen_disp); i++ )
-		{
-		bool show = !(ts.ser_eeprom_in_use != 0 && (screen_disp == 10) && (i % MENUSIZE == 2 || i % MENUSIZE == 3));
-		// this takes care of the removing 2 items if serial eeprom is not fitted
-		if (show)
-		    UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+(12*(i%MENUSIZE)),base_screens[screen_disp-1][(i%MENUSIZE)],m_clr,Black,0);
-		}
-	    }
-	//
-	// ****************   Radio Calibration Menu  ***************
-	//
-	else
-	    {		// Is this part of the radio configuration menu?
-	    int i;
-	    for (i=MENUSIZE*(screen_disp-offset-1); i < MENUSIZE*(screen_disp-offset); i++ )
-		UiLcdHy28_PrintText(POS_MENU_IND_X, POS_MENU_IND_Y+(12*(i%MENUSIZE)),conf_screens[screen_disp-offset-1][(i%MENUSIZE)],c_clr,Black,0);
-	    }
-
-
-	if(ts.menu_var_changed)	{		// show warning if variable has changed
-		if(warn != 1)
-			UiLcdHy28_PrintText(POS_SPECTRUM_IND_X - 2, POS_SPECTRUM_IND_Y + 60, " Save settings using POWER OFF!  ", Orange, Black, 0);
-		warn = 1;
-	}
-	else	{					// erase warning by using the same color as the background
-		if(warn != 2)
-			UiLcdHy28_PrintText(POS_SPECTRUM_IND_X - 2, POS_SPECTRUM_IND_Y + 60, " CW impaired when in MENU mode!  ", Grey, Black, 0);
-		warn = 2;
-	}
-	//
-
-	//
-	//
-	if((sd.use_spi) && (ts.menu_var != menu_var_changed))	{	// if LCD SPI mode is active, do additional validation to avoid additional updates on display
-		update_vars = 1;
-	}
-	menu_var_changed = ts.menu_var;
-	//
-	//
-	// These functions are used to scan the individual menu items and display the items.
-	// In each of the FOR loops below, make CERTAIN that the precise number of items are included for each menu!
-	//
-
-//	if(((mode == 0) && (sd.use_spi) && (screen_disp != screen_disp_old)) || (((mode == 0) && (!sd.use_spi))) || update_vars)	{		// display all items and their current settings
-		// but minimize updates if the LCD is using an SPI interface
-	if((mode == 0) || update_vars)	{
-		update_vars = 0;
-		uint32_t menu_num = ts.menu_item / MENUSIZE;
-		// calculate screen number simply by dividing by MENUSIZE
-		// then loop over the correct function to display the items
-		if (ts.menu_item < MAX_MENU_ITEM) {
-			for(var = menu_num * MENUSIZE; (var < ((menu_num+1) * MENUSIZE)) && var < MAX_MENU_ITEM; var++) {
-				UiDriverUpdateMenuLines(var, 0);
-			}
-		}
-		//
-		// *** ADJUSTMENT MENU ***
-		//
-		else {	// Is this one of the radio configuration items?
-			for(var = menu_num * MENUSIZE; (var < (menu_num+1) * MENUSIZE) && var < (MAX_MENU_ITEM + MAX_RADIO_CONFIG_ITEM); var++) {
-				UiDriverUpdateConfigMenuLines(var-MAX_MENU_ITEM, 0);
-			}
-		}
-	}
-
-	//
-//	screen_disp_old = screen_disp;
-	//
-	if(mode == 1)	{	// individual item selected/changed
-		if(ts.menu_item < MAX_MENU_ITEM)					// main menu item
-			UiDriverUpdateMenuLines(ts.menu_item, 1);
-		else												// "adjustment" menu item
-			UiDriverUpdateConfigMenuLines(ts.menu_item-MAX_MENU_ITEM, 1);
-	}
-	else if(mode == 3)	{	// restore default setting for individual item
-		if(ts.menu_item < MAX_MENU_ITEM)					// main menu item
-			UiDriverUpdateMenuLines(ts.menu_item, 3);
-		else												// "adjustment" menu item
-			UiDriverUpdateConfigMenuLines(ts.menu_item-MAX_MENU_ITEM,3);
-	}
+    if (ts.filter_select[bwId] == 0)    {
+      *clr_ptr = Red;
     }
+    strcpy(options,
+        (ts.filter_select[bwId] < filter->configs_num)?
+        filter->config[ts.filter_select[bwId]].label:
+        "UNDEFINED"
+        );
+    UiDriverMenuChangeFilter(bwId,fchange);
+  }
+  return fchange;
 }
+
+
 //
 //
 //*----------------------------------------------------------------------------
 //* Function Name       : UiDriverUpdateMenuLines
 //* Object              : Display and and change line items
-//* Input Parameters    : index:  Line to display  mode:  0=display/update 1=change item 3=set default
+//* Input Parameters    : index:  Line to display  mode:  0=display/update 1=change item 3=set default, pos > -1 use this line as position
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
 //
-static void UiDriverUpdateMenuLines(uchar index, uchar mode)
+static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 {
 	char options[32];
 	ulong opt_pos;			// y position of option cursor
-	static ulong opt_oldpos = 999;	// y position of option cursor, previous
 	uchar select;
 	ulong	clr;
 	uchar temp_var;
@@ -843,22 +1296,19 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 	float tcalc;
 	bool	fchange = 0;
 	uchar	temp_sel;		// used as temporary holder during selection
-	// bool	disp_shift = 0;	// TRUE if option display is to be shifted to the left to allow more options
-
 	clr = White;		// color used it display of adjusted options
 
+    select = index; // use index passed from calling function
 	if(mode == 0)	{	// are we in update/display mode?
-		select = index;	// use index passed from calling function
 		var = 0;		// prevent any change of variable
 	}
 	else	{			// this is "change" mode
-		select = ts.menu_item;	// item selected from encoder
 		var = ts.menu_var;		// change from encoder
 		ts.menu_var = 0;		// clear encoder change detect
 	}
 	strcpy(options, "ERROR");	// pre-load to catch error condition
-	//
-	opt_pos = select % MENUSIZE; // calculate position from menu item number
+	opt_pos = pos;
+
 	switch(select)	{		//  DSP_NR_STRENGTH_MAX
 	case MENU_DSP_NR_STRENGTH:	// DSP Noise reduction strength
 
@@ -889,193 +1339,31 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 		break;
 	//
 	case MENU_300HZ_SEL:	// 300 Hz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_300Hz_select,
-					0,
-					MAX_300HZ_FILTER,
-					FILTER_300HZ_DEFAULT,
-					1
-					);
-			if(ts.filter_id != AUDIO_300HZ) {
-				clr = Orange;
-			}
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		if (ts.filter_300Hz_select == 0)	{
-			clr = Red;
-		}
-
-		UiDriverMenuMapStrings(options,ts.filter_300Hz_select,MAX_300HZ_FILTER, filter_list_300Hz);
-		UiDriverMenuChangeFilter(AUDIO_300HZ,fchange);
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_300HZ);
 		break;
 	case MENU_500HZ_SEL:	// 500 Hz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_500Hz_select,
-					0,
-					MAX_500HZ_FILTER,
-					FILTER_500HZ_DEFAULT,
-					1
-					);
-			if(ts.filter_id != AUDIO_500HZ)
-				clr = Orange;
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		if (ts.filter_500Hz_select == 0)	{
-			clr = Red;
-		}
-
-		UiDriverMenuMapStrings(options,ts.filter_500Hz_select,MAX_500HZ_FILTER, filter_list_500Hz);
-		UiDriverMenuChangeFilter(AUDIO_500HZ,fchange);
-		break;
-
+	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_500HZ);
+	  break;
 	case MENU_1K8_SEL:	// 1.8 kHz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_1k8_select,
-					0,
-					MAX_1K8_FILTER,
-					FILTER_1K8_DEFAULT,
-					1
-					);
-			if(ts.filter_id != AUDIO_1P8KHZ)
-				clr = Orange;
-		}
-		else				// show disabled if in FM
-			clr = Red;
+	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P8KHZ);
+	  break;
 
-		UiDriverMenuMapStrings(options,ts.filter_1k8_select,MAX_1K8_FILTER, filter_list_1P8KHz);
-		UiDriverMenuChangeFilter(AUDIO_1P8KHZ,fchange);
-		break;
 	case MENU_2K3_SEL: // 2.3 kHz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_2k3_select,
-					0,
-					MAX_2K3_FILTER,
-					FILTER_2K3_DEFAULT,
-					1
-			);
-			if(ts.filter_id != AUDIO_2P3KHZ)
-				clr = Orange;
-
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		UiDriverMenuMapStrings(options,ts.filter_2k3_select,MAX_2K3_FILTER, filter_list_2P3KHz);
-		UiDriverMenuChangeFilter(AUDIO_2P3KHZ,fchange);
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P3KHZ);
 		break;
 	case MENU_2K7_SEL: // 2.7 kHz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_2k7_select,
-					0,
-					MAX_2K7_FILTER,
-					FILTER_2K7_DEFAULT,
-					1
-			);
-			if(ts.filter_id != AUDIO_2P7KHZ)
-				clr = Orange;
-
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		UiDriverMenuMapStrings(options,ts.filter_2k7_select,MAX_2K7_FILTER, filter_list_2P7KHz);
-		UiDriverMenuChangeFilter(AUDIO_2P7KHZ,fchange);
-		break;
-	case MENU_2K9_SEL: // 2.9 kHz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_2k9_select,
-					0,
-					MAX_2K9_FILTER,
-					FILTER_2K9_DEFAULT,
-					1
-			);
-			if(ts.filter_id != AUDIO_2P9KHZ)
-				clr = Orange;
-
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		UiDriverMenuMapStrings(options,ts.filter_2k9_select,MAX_2K9_FILTER, filter_list_2P9KHz);
-		UiDriverMenuChangeFilter(AUDIO_2P9KHZ,fchange);
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P7KHZ);
 		break;
 	case MENU_3K6_SEL: // 3.6 kHz filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_3k6_select,
-					0,
-					MAX_3K6_FILTER,
-					FILTER_3K6_DEFAULT,
-					1
-			);
-			if(ts.filter_id != AUDIO_3P6KHZ)
-				clr = Orange;
-
-		}
-		else				// show disabled if in FM
-			clr = Red;
-
-		UiDriverMenuMapStrings(options,ts.filter_3k6_select,MAX_3K6_FILTER, filter_list_3P6KHz);
-		UiDriverMenuChangeFilter(AUDIO_3P6KHZ,fchange);
+	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P6KHZ);
 		break;
-	case MENU_WIDE_SEL: // Wide filter select
-		if(ts.dmod_mode != DEMOD_FM)	{
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_wide_select,
-					0,
-					WIDE_FILTER_MAX,
-					WIDE_FILTER_10K,
-					1
-			);
-			if((ts.filter_id != AUDIO_WIDE))	// make orange if NOT in "Wide" mode
-				clr = Orange;
-		}
-		else				// show disabled if in FM
-			clr = Red;
-		//
-		switch(ts.filter_wide_select)	{
-			case WIDE_FILTER_5K_AM:
-				strcpy(options, "  5kHz AM");
-				break;
-			case WIDE_FILTER_6K_AM:
-				strcpy(options, "  6kHz AM");
-				break;
-			case WIDE_FILTER_7K5_AM:
-				strcpy(options, "7.5kHz AM");
-				break;
-			case WIDE_FILTER_10K_AM:
-				strcpy(options, "10 kHz AM");
-				break;
-			case WIDE_FILTER_5K:
-				strcpy(options, "     5kHz");
-				break;
-			case WIDE_FILTER_6K:
-				strcpy(options, "     6kHz");
-				break;
-			case WIDE_FILTER_7K5:
-				strcpy(options, "    7.5kHz");
-				break;
-			case WIDE_FILTER_10K:
-			default:
-				strcpy(options, "     10kHz");
-				break;
-		}
-		//
-		if((ts.filter_id == AUDIO_WIDE) && fchange)	{
-			//UiDriverProcessActiveFilterScan();	// find next active filter
-			UiDriverChangeFilter(0);
-			UiCalcRxPhaseAdj();						// update Hilbert/LowPass filter setting
-			UiDriverDisplayFilterBW();	// update on-screen filter bandwidth indicator
-		}
-		//
-		// disp_shift = 1;		// move the options to the left slightly
-		break;
+	case MENU_4K4_SEL:	//
+	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P4KHZ);
+	  break;
+	case MENU_6K0_SEL:	//
+      UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_6P0KHZ);
+	  break;
+
 	case MENU_CW_WIDE_FILT: // CW mode wide filter enable/disable
 		UiDriverMenuItemChangeDisableOnOff(var, mode, &ts.filter_cw_wide_disable,0,options,&clr);
 
@@ -1136,7 +1424,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 				);
 
 		if(ts.fm_subaudible_tone_gen_select)	{	// tone select not zero (tone activated
-			UiCalcSubaudibleGenFreq();		// calculate frequency word
+			AudioManagement_CalcSubaudibleGenFreq();		// calculate frequency word
 			a = (int)(ads.fm_subaudible_tone_gen_freq * 10);		// convert to integer, Hz*10
 			b = a;
 			a /= 10;		// remove 10ths of Hz
@@ -1165,7 +1453,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 					);
 		//
 		if(ts.fm_subaudible_tone_det_select)	{	// tone select not zero (tone activated
-			UiCalcSubaudibleDetFreq();		// calculate frequency word
+			AudioManagement_CalcSubaudibleDetFreq();		// calculate frequency word
 			a = (int)(ads.fm_subaudible_tone_det_freq * 10);		// convert to integer, Hz*10
 			b = a;
 			a /= 10;		// remove 10ths of Hz
@@ -1235,7 +1523,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 		}
 		//
 		if(fchange)	{			// was the bandwidth changed?
-			UiCalcRxPhaseAdj();			// yes - update the filters!
+			AudioFilter_CalcRxPhaseAdj();			// yes - update the filters!
 			UiDriverChangeFilter(1);	// update display of filter bandwidth (numerical) on screen only
 		}
 		//
@@ -1289,7 +1577,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 		//
 		if(fchange)	{
 			// now set the AGC
-			UiCalcAGCDecay();	// initialize AGC decay ("hang time") values
+			AudioManagement_CalcAGCDecay();	// initialize AGC decay ("hang time") values
 		}
 		//
 		if(ts.txrx_mode == TRX_MODE_TX)	// Orange if in TX mode
@@ -1304,7 +1592,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 						1
 						);
 		if(fchange)	{
-			UiCalcRFGain();
+			AudioManagement_CalcRFGain();
 		}
 		//
 		if(ts.rf_gain < 20)
@@ -1443,8 +1731,8 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 				UiDriverChangeKeyerSpeed(0);
 			else
 				{
-				UIDriverChangeAudioGain(0);
-				UiDriverUpdateMenu(0);
+				UiDriverChangeAudioGain(0);
+				UiMenu_RenderMenu(MENU_RENDER_ONLY);
 				}
 		}
 
@@ -1458,7 +1746,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 	case MENU_MIC_GAIN:	// Mic Gain setting
 
 		if(ts.tx_audio_source == TX_AUDIO_MIC)	{	// Allow adjustment only if in MIC mode
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.tx_mic_gain,
+			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.tx_gain[TX_AUDIO_MIC],
 							MIC_GAIN_MIN,
 							MIC_GAIN_MAX,
 							MIC_GAIN_DEFAULT,
@@ -1466,36 +1754,28 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 							);
 		}
 		if((ts.txrx_mode == TRX_MODE_TX) && (fchange))	{		// only adjust the hardware if in TX mode (it will kill RX otherwise!)
-			if(ts.tx_mic_gain > 50)	{		// actively adjust microphone gain and microphone boost
-				ts.mic_boost = 1;
-				Codec_WriteRegister(W8731_ANLG_AU_PATH_CNTR,0x0015);	// mic boost on
-				ts.tx_mic_gain_mult = (ts.tx_mic_gain - 35)/3;			// above 50, rescale software amplification
-			}
-			else	{
-				ts.mic_boost = 0;
-				Codec_WriteRegister(W8731_ANLG_AU_PATH_CNTR,0x0014);	// mic boost off
-				ts.tx_mic_gain_mult = ts.tx_mic_gain;
-			}
+			Codec_MicBoostCheck();
 		}
 		//
 		if(fchange)	{		// update on-screen info if there was a change
 			if(ts.dmod_mode == DEMOD_CW)
 				UiDriverChangeKeyerSpeed(0);
 			else
-				UIDriverChangeAudioGain(0);
+				UiDriverChangeAudioGain(0);
 		}
 		//
 		if(ts.tx_audio_source != TX_AUDIO_MIC) {	// Orange if not in MIC-IN mode
 			clr = Orange;
 		}
 		//
-		sprintf(options, "   %u", ts.tx_mic_gain);
+		sprintf(options, "   %u", ts.tx_gain[TX_AUDIO_MIC]);
 		break;
 	//
 	case MENU_LINE_GAIN:	// Line Gain setting
 
+		// TODO: Revise, since it now changes the currently selected tx source setting
 		if(ts.tx_audio_source != TX_AUDIO_MIC)	{	// Allow adjustment only if in line-in mode
-			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.tx_line_gain,
+			fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.tx_gain[ts.tx_audio_source],
 							LINE_GAIN_MIN,
 							LINE_GAIN_MAX,
 							LINE_GAIN_DEFAULT,
@@ -1508,16 +1788,20 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 			if(ts.dmod_mode == DEMOD_CW)
 				UiDriverChangeKeyerSpeed(0);
 			else	{		// in voice mode
-				UIDriverChangeAudioGain(0);
+				UiDriverChangeAudioGain(0);
 				if(ts.txrx_mode == TRX_MODE_TX)		// in transmit mode?
-					Codec_Line_Gain_Adj(ts.tx_line_gain);		// change codec gain
+					// TODO: Think about this, this is a hack
+					Codec_Line_Gain_Adj(ts.tx_gain[TX_AUDIO_LINEIN_L]);		// change codec gain
 			}
 		}
 		//
 		if(ts.tx_audio_source == TX_AUDIO_MIC)	// Orange if in MIC mode
-			clr = Orange;
-		//
-		sprintf(options, "  %u", ts.tx_line_gain);
+		    {
+		    clr = Orange;
+		    sprintf(options, "  %u", ts.tx_gain[TX_AUDIO_LINEIN_L]);
+		    }
+		else
+		    sprintf(options, "  %u", ts.tx_gain[ts.tx_audio_source]);
 		break;
 	//
 	case MENU_ALC_RELEASE:		// ALC Release adjust
@@ -1530,7 +1814,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 							1
 							);
 			if(fchange)	{		// value changed?  Recalculate
-				UiCalcALCDecay();
+				AudioManagement_CalcALCDecay();
 			}
 		}
 		else			// indicate RED if "Compression Level" below was nonzero
@@ -1573,7 +1857,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 						);
 		//
 		if(fchange)	{
-			UiCalcTxCompLevel();			// calculate parameters for selected amount of compression
+			AudioManagement_CalcTxCompLevel();			// calculate parameters for selected amount of compression
 			//
 			if(ts.dmod_mode != DEMOD_CW)	// In voice mode?
 				UiDriverChangeCmpLevel(0);	// update on-screen display of compression level
@@ -1613,7 +1897,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 			if(ts.dmod_mode == DEMOD_CW)		// yes, update on-screen info
 				UiDriverChangeKeyerSpeed(0);
 			else
-				UIDriverChangeAudioGain(0);
+				UiDriverChangeAudioGain(0);
 		}
 		//
 		sprintf(options, "  %u", ts.keyer_speed);
@@ -1819,7 +2103,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 						SPEC_COLOUR_TRACE_DEFAULT,
 						1
 						);
-		UiDriverMenuMapColors(ts.scope_trace_colour,options,&clr);
+		UiMenu_MapColors(ts.scope_trace_colour,options,&clr);
 		break;
 		//
 	case MENU_SCOPE_GRID_COLOUR:	// spectrum scope grid colour
@@ -1829,7 +2113,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 						SPEC_COLOUR_GRID_DEFAULT,
 						1
 						);
-		UiDriverMenuMapColors(ts.scope_grid_colour,options,&clr);
+		UiMenu_MapColors(ts.scope_grid_colour,options,&clr);
 		break;
 		//
 	case MENU_SCOPE_SCALE_COLOUR:	// spectrum scope/waterfall  scale colour
@@ -1839,7 +2123,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 						SPEC_COLOUR_SCALE_DEFAULT,
 						1
 						);
-		UiDriverMenuMapColors(ts.scope_scale_colour,options,&clr);
+		UiMenu_MapColors(ts.scope_scale_colour,options,&clr);
 		// disp_shift = 1;
 		break;
 		//
@@ -1905,7 +2189,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 									1
 									);
 			//
-			UiDriverMenuMapColors(ts.scope_centre_grid_colour,options,&clr);
+			UiMenu_MapColors(ts.scope_centre_grid_colour,options,&clr);
 						break;
 			//
 		case MENU_SCOPE_MODE:
@@ -1987,11 +2271,11 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 			UiDriverMenuItemChangeUInt8(var, mode, &ts.waterfall_speed,
 					WATERFALL_SPEED_MIN,
 					WATERFALL_SPEED_MAX,
-					sd.use_spi?WATERFALL_SPEED_DEFAULT_SPI:WATERFALL_SPEED_DEFAULT_PARALLEL,
+					ts.display_type!=DISPLAY_HY28B_PARALLEL?WATERFALL_SPEED_DEFAULT_SPI:WATERFALL_SPEED_DEFAULT_PARALLEL,
 					1
 					);
 			//
-			if(sd.use_spi)	{
+			if(ts.display_type != DISPLAY_HY28B_PARALLEL)	{
 				if(ts.waterfall_speed <= WATERFALL_SPEED_WARN_SPI)
 					clr = Red;
 				else if(ts.waterfall_speed <= WATERFALL_SPEED_WARN1_SPI)
@@ -2046,116 +2330,49 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 			}
 			break;
 	case MENU_BACKUP_CONFIG:
-			strcpy(options," ");
+			strcpy(options,"n/a");
 			if(ts.ser_eeprom_in_use == 0)
-			    {
-			    strcpy(options, " Do it!");
-			    clr = White;
-			    if(var>=1)
-				{
-				UiLcdHy28_PrintText(POS_MENU_IND_X+189, POS_MENU_IND_Y+opt_pos*12,"Working",Red,Black,0);
-				copy_ser2virt();
-				strcpy(options, " Done...");
-				clr = Green;
-				UiDriverUpdateMenu(2);
-				}
-			    break;
-			    }
-			select = MENU_HARDWARE_INFO;
+			{
+			  strcpy(options, " Do it!");
+			  clr = White;
+			  if(var>=1)
+			  {
+			    UiMenu_DisplayValue("Working",Red,opt_pos);
+			    copy_ser2virt();
+			    strcpy(options, " Done...");
+			    clr = Green;
+			  }
+			}
 			break;
 	case MENU_RESTORE_CONFIG:
-			strcpy(options," ");
+			strcpy(options,"n/a");
 			if(ts.ser_eeprom_in_use == 0)
-			    {
-			    strcpy(options, "Do it!");
-			    clr = White;
-			    if(var>=1)
-				{
-				UiLcdHy28_PrintText(POS_MENU_IND_X+189, POS_MENU_IND_Y+opt_pos*12,"Working",Red,Black,0);
-				copy_virt2ser();
-				ui_si570_get_configuration();		// restore SI570 to factory default
-				*(__IO uint32_t*)(SRAM2_BASE) = 0x55;
-				NVIC_SystemReset();			// restart mcHF
-				}
-			    break;
-			    }
-			select = MENU_WFALL_SIZE;
+			{
+			  strcpy(options, "Do it!");
+			  clr = White;
+			  if(var>=1)
+			  {
+
+			    UiMenu_DisplayValue("Working",Red,opt_pos);
+			    copy_virt2ser();
+			    ui_si570_get_configuration();		// restore SI570 to factory default
+			    *(__IO uint32_t*)(SRAM2_BASE) = 0x55;
+			    NVIC_SystemReset();			// restart mcHF
+			  }
+			}
 			break;
-	case MENU_HARDWARE_INFO:
-			strcpy(options, "SHOW");
-			clr = White;
-			if(var>=1)
-			    {
-			    strcpy(options, " ");
-			    clr = White;
-			    UiDriverUpdateMenu(9);
-			    }
-			break;
-	case MENU_DUMMY_LINE_2:
-			strcpy(options, " ");
-			break;
-	case MENU_DUMMY_LINE_3:
-			strcpy(options, " ");
-			break;
-	case MENU_DUMMY_LINE_4:
-			strcpy(options, " ");
-			break;
-	case MENU_DUMMY_LINE_5:
-			strcpy(options, " ");
-			break;
-//
-//
-// ******************  Make sure that this menu item is ALWAYS the last of the main menu items!
-//
-	case MENU_CONFIG_ENABLE:	// Radio Config Menu Enable - not saved in EEPROM, does not trigger "save" indicator
-		if(var >= 1)	{	// setting increase?
-			ts.radio_config_menu_enable = 1;
-		}
-		else if(var <= -1)	{	// setting decrease?
-			ts.radio_config_menu_enable = 0;
-		}
-		//
-		if(mode == 3)
-			ts.radio_config_menu_enable = 0;
-		//
-		if(ts.radio_config_menu_enable)	{
-			strcpy(options, " ON");
-			clr = Orange;
-		}
-		else
-			strcpy(options, "OFF");
-		break;
 	default:						// Move to this location if we get to the bottom of the table!
 		strcpy(options, "ERROR!");
 		break;
 	}
 	//
-	UiLcdHy28_PrintTextRight(POS_MENU_CURSOR_X - 4, POS_MENU_IND_Y + (opt_pos * 12), options, clr, Black, 0);		// yes, normal position
+	UiMenu_DisplayValue(options,clr,opt_pos);
 	if(mode == 1)	{
-		if(opt_oldpos != 999)		// was the position of a previous cursor stored?
-			UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y + (opt_oldpos * 12), " ", Black, Black, 0);	// yes - erase it
-		//
-		opt_oldpos = opt_pos;	// save position of new "old" cursor position
-		UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y + (opt_pos * 12), "<", Green, Black, 0);	// place cursor at active position
+	  UiMenu_MoveCursor(opt_pos);
 	}
 	//
 	return;
 }
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
 //
 
 //
@@ -2167,32 +2384,29 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode)
 //* Functions called    :
 //*----------------------------------------------------------------------------
 //
-static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
+static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 {
-	char options[32], temp[32];
+	char options[32];
 	ulong opt_pos;					// y position of option
-	static ulong opt_oldpos = 999;	// y position of option
 	uchar select;
 	ulong	clr;
 	ulong	calc_var;
 	uchar	temp_var;
 	int var;
 	bool tchange = 0;		// used to indicate a parameter change
-	// bool disp_shift = 0;	// used to cause display to be shifted to the left for large amounts of data (e.g. frequency displays)
-	opt_pos = 5;		// default in case of use with wrong index/mode values
-	// float ftemp;
 
 	clr = White;		// color used it display of adjusted options
 
+    select = index; // use index passed from calling function
 	if(mode == 0)	{	// are we in update/display mode?
-		select = index;	// use index passed from calling function
 		var = 0;		// prevent any change of variable
-	}
-	else	{			// this is "change" mode
-		select = ts.menu_item-MAX_MENU_ITEM;	// item selected from encoder
+	} else {
 		var = ts.menu_var;		// change from encoder
 		ts.menu_var = 0;		// clear encoder change detect
 	}
+    opt_pos = pos;
+
+
 	strcpy(options, "ERROR");	// pre-load to catch error condition
 	//
 	if(mode == 1)	{
@@ -2218,7 +2432,8 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 	}
 	//
 
-	opt_pos = select % MENUSIZE;
+
+
 	switch(select)	{		//
 	//
 	case CONFIG_FREQ_STEP_MARKER_LINE:	// Frequency step marker line on/off
@@ -2254,12 +2469,11 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 		}
 		break;
 	case CONFIG_TX_DISABLE:	// Step size button swap on/off
-		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &ts.tx_disable,0,options,&clr);
-		if(ts.tx_disable)	{			// Transmit disabled?
-			UiLcdHy28_PrintText(POS_BOTTOM_BAR_F5_X,POS_BOTTOM_BAR_F5_Y,"  TUNE",Grey1,Black,0);	// Make TUNE button Grey
-		}
-		else	{
-			UiLcdHy28_PrintText(POS_BOTTOM_BAR_F5_X,POS_BOTTOM_BAR_F5_Y,"  TUNE",White,Black,0);	// Make TUNE button White
+		temp_var = ts.tx_disable & 1;
+		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
+		if(tchange) {
+		  UiDriverFButtonLabel(5,"  TUNE",temp_var?Grey1:White);
+		  ts.tx_disable = temp_var;
 		}
 		break;
 	case CONFIG_AUDIO_MAIN_SCREEN_MENU_SWITCH:	// AFG/(STG/CMP) and RIT/(WPM/MIC/LIN) are to change automatically with TX/RX
@@ -2334,27 +2548,25 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 				SPEC_COLOUR_GRID_DEFAULT,
 				1
 				);
-		UiDriverMenuMapColors(ts.filter_disp_colour,options,&clr);
+		UiMenu_MapColors(ts.filter_disp_colour,options,&clr);
 		break;
 		//
 	case CONFIG_MAX_VOLUME:	// maximum audio volume
-		UiDriverMenuItemChangeUInt8(var, mode, &ts.audio_max_volume,
+		UiDriverMenuItemChangeUInt8(var, mode, &ts.rx_gain[RX_AUDIO_SPKR].max,
 						MAX_VOLUME_MIN,
 						MAX_VOLUME_MAX,
 						MAX_VOLUME_DEFAULT,
 						1
 						);
-		if(ts.audio_gain > ts.audio_max_volume)	{			// is the volume currently higher than the new setting?
-			ts.audio_gain = ts.audio_max_volume;		// yes - force the volume to the new value
-			//
-			sprintf(temp,"%02d",ts.audio_gain);			// Update screen indicator
-			UiLcdHy28_PrintText((POS_AG_IND_X + 38),(POS_AG_IND_Y + 1), temp,White,Black,0);
+		if(ts.rx_gain[RX_AUDIO_SPKR].value > ts.rx_gain[RX_AUDIO_SPKR].max)	{			// is the volume currently higher than the new setting?
+			ts.rx_gain[RX_AUDIO_SPKR].value = ts.rx_gain[RX_AUDIO_SPKR].max;		// yes - force the volume to the new value
+			UiDriverChangeAfGain(0);
 		}
-		sprintf(options, "    %u", ts.audio_max_volume);
+		sprintf(options, "    %u", ts.rx_gain[RX_AUDIO_SPKR].max);
 		//
-		if(ts.audio_max_volume <= MAX_VOL_RED_THRESH)			// Indicate that gain has been reduced by changing color
+		if(ts.rx_gain[RX_AUDIO_SPKR].max <= MAX_VOL_RED_THRESH)			// Indicate that gain has been reduced by changing color
 			clr = Red;
-		else if(ts.audio_max_volume <= MAX_VOLT_YELLOW_THRESH)
+		else if(ts.rx_gain[RX_AUDIO_SPKR].max <= MAX_VOLT_YELLOW_THRESH)
 			clr = Orange;
 		break;
 	case CONFIG_MAX_RX_GAIN:	// maximum RX gain setting
@@ -2365,7 +2577,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 						1
 						);
 		if(tchange)	{
-			UiCalcAGCVals();	// calculate new internal AGC values from user settings
+			AudioManagement_CalcAGCVals();	// calculate new internal AGC values from user settings
 		}
 		sprintf(options, "    %u", ts.max_rf_gain);
 		break;
@@ -2377,7 +2589,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 				ts.misc_flags2 |= 4;		// set LSB+2
 			else			// beep is to be disabled
 				ts.misc_flags2 &= 0xfb;		// clear LSB+2
-			UiDriverUpdateMenu(0);
+			UiMenu_RenderMenu(MENU_RENDER_ONLY);
 		}
 		break;
 	case CONFIG_BEEP_FREQ:		// Beep frequency
@@ -2388,8 +2600,8 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 								DEFAULT_BEEP_FREQUENCY,
 								25);
 			if(tchange)		{
-				UiLoadBeepFreq();
-				UiKeyBeep();		// make beep to demonstrate frequency
+				AudioManagement_LoadBeepFreq();
+				AudioManagement_KeyBeep();		// make beep to demonstrate frequency
 			}
 		}
 		else	// beep not enabled - display frequency in red
@@ -2404,8 +2616,8 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 							DEFAULT_BEEP_LOUDNESS,
 							1);
 		if(tchange)	{
-			UiLoadBeepFreq();	// calculate new beep loudness values
-			UiKeyBeep();		// make beep to demonstrate loudness
+			AudioManagement_LoadBeepFreq();	// calculate new beep loudness values
+			AudioManagement_KeyBeep();		// make beep to demonstrate loudness
 		}
 		sprintf(options, "    %u", ts.beep_loudness);
 		break;
@@ -2489,7 +2701,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 								0,
 								1);
 			if(tchange)
-				UiCalcRxIqGainAdj();
+				AudioManagement_CalcRxIqGainAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2503,7 +2715,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 								0,
 								1);
 			if(tchange)
-				UiCalcRxPhaseAdj();
+				AudioFilter_CalcRxPhaseAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2517,7 +2729,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 								0,
 								1);
 			if(tchange)
-				UiCalcRxIqGainAdj();
+				AudioManagement_CalcRxIqGainAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2530,7 +2742,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 											MAX_RX_IQ_PHASE_BALANCE,
 											0,
 											1);if(tchange)
-				UiCalcRxPhaseAdj();
+				AudioFilter_CalcRxPhaseAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2544,7 +2756,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 											0,
 											1);
 			if(tchange)
-				UiCalcRxIqGainAdj();
+				AudioManagement_CalcRxIqGainAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2557,7 +2769,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 													MAX_RX_IQ_GAIN_BALANCE,
 													0,
 													1);if(tchange)
-				UiCalcRxIqGainAdj();
+				AudioManagement_CalcRxIqGainAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2571,7 +2783,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 													0,
 													1);
 			if(tchange)
-				UiCalcTxIqGainAdj();
+				AudioManagement_CalcTxIqGainAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
@@ -2585,7 +2797,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 					0,
 					1);
 			if(tchange)
-				UiCalcTxPhaseAdj();
+				AudioFilter_CalcTxPhaseAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
@@ -2599,7 +2811,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 													0,
 													1);
 			if(tchange)
-				UiCalcTxIqGainAdj();
+				AudioManagement_CalcTxIqGainAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
@@ -2613,13 +2825,12 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 					0,
 					1);
 			if(tchange)
-				UiCalcTxPhaseAdj();
+				AudioFilter_CalcTxPhaseAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
 		//
 		sprintf(options, "   %d", ts.tx_iq_usb_phase_balance);
-		opt_pos = CONFIG_USB_TX_IQ_PHASE_BAL % MENUSIZE;
 		break;
 		//
 	case 	CONFIG_AM_TX_GAIN_BAL:		// AM TX IQ Phase balance
@@ -2630,7 +2841,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 					0,
 					1);
 			if(tchange)
-				UiCalcTxIqGainAdj();
+				AudioManagement_CalcTxIqGainAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
@@ -2644,7 +2855,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 					0,
 					1);
 			if(tchange)
-				UiCalcTxIqGainAdj();
+				AudioManagement_CalcTxIqGainAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
 			clr = Orange;
@@ -3057,7 +3268,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 				NB_AGC_DEFAULT,
 				1);
 		if(tchange)	{				// parameter changed?
-			UiCalcNB_AGC();	// yes - recalculate new values for Noise Blanker AGC
+			AudioManagement_CalcNB_AGC();	// yes - recalculate new values for Noise Blanker AGC
 		}
 		//
 		sprintf(options, "  %u", ts.nb_agc_time_const);
@@ -3088,14 +3299,12 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 			clr = Red;					// warn user that filter is off!
 		}
 		break;
-	case CONFIG_TUNE_POWER_LEVEL:	// set power for antenne tuning
-		tchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.tune_power_level,
+	case CONFIG_TUNE_POWER_LEVEL: // set power for antenne tuning
+		tchange = UiDriverMenuItemChangeUInt8(var*(-1), mode, &ts.tune_power_level,
 				0,
 				PA_LEVEL_MAX_ENTRY,
-				PA_LEVEL_FULL,
+				PA_LEVEL_MAX_ENTRY,
 				1);
-
-		// disp_shift = 1;
 		switch(ts.tune_power_level)	{
 		case PA_LEVEL_FULL:
 			strcpy(options, "FULL POWER");
@@ -3162,11 +3371,10 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 		{
 			strcpy(options, "Do it!");
 			clr = White;
-			opt_pos =  CONFIG_RESET_SER_EEPROM % MENUSIZE;			// Y position of this menu item
 			if(var>=1)
 			{
 				// clear EEPROM
-				UiLcdHy28_PrintText(POS_MENU_IND_X+189, POS_MENU_IND_Y+opt_pos*12,"Working",Red,Black,0);
+                UiMenu_DisplayValue("Working",Red,opt_pos);
 				Write_24Cxx(0,0xFF,16);
 				Write_24Cxx(1,0xFF,16);
 				ui_si570_get_configuration();		// restore SI570 to factory default
@@ -3175,6 +3383,89 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 			}
 		}
 		break;
+	case MENU_1K4_SEL: //
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P4KHZ);
+		break;
+	case MENU_1K6_SEL: //
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P6KHZ);
+		break;
+	case MENU_2K1_SEL: //
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P1KHZ);
+		break;
+	case MENU_2K5_SEL: //
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P5KHZ);
+		break;
+	case MENU_2K9_SEL: // 2.9 kHz filter select
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P9KHZ);
+		break;
+	case MENU_3K2_SEL: //
+      UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P2KHZ);
+		break;
+	case MENU_3K4_SEL: //
+        UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P4KHZ);
+		break;
+	case MENU_3K8_SEL: //
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P8KHZ);
+		break;
+	case MENU_4K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P0KHZ);
+		break;
+	case MENU_4K2_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P2KHZ);
+		break;
+	case MENU_4K6_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P6KHZ);
+		break;
+	case MENU_4K8_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P8KHZ);
+		break;
+	case MENU_5K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_5P0KHZ);
+		break;
+	case MENU_5K5_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_5P5KHZ);
+		break;
+	case MENU_6K5_SEL:	//
+        UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_6P5KHZ);
+		break;
+	case MENU_7K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_7P0KHZ);
+		break;
+	case MENU_7K5_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_7P5KHZ);
+		break;
+	case MENU_8K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_8P0KHZ);
+		break;
+	case MENU_8K5_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_8P5KHZ);
+		break;
+	case MENU_9K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_9P0KHZ);
+		break;
+	case MENU_9K5_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_9P5KHZ);
+		break;
+	case MENU_10K0_SEL:	//
+	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_10P0KHZ);
+		break;
+    case MENU_FP_SEL: // FIXME: Remove after FilterPaths become officially used
+        temp_var = ts.filter_path;
+        tchange = UiDriverMenuItemChangeUInt8(var, mode, &temp_var,
+            0,
+            86,
+            0,
+            1);
+        ts.filter_path = temp_var;
+        if(tchange) {   // did something change?
+          // avoid FM filter paths for now
+          if (ts.filter_path == 1 || ts.filter_path == 2) { ts.filter_path = 4; }
+          if (ts.filter_path == 3) { ts.filter_path = 0; }
+          UiDriverChangeFilter(0);
+        }
+        sprintf(options, "  %u", ts.filter_path);
+        break;
+
 	case CONFIG_DSP_ENABLE:	// Enable DSP NR
 		temp_var = ts.dsp_enabled;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
@@ -3192,61 +3483,15 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode)
 		opt_pos = 5;
 		break;
 	}
-	UiLcdHy28_PrintTextRight(POS_MENU_CURSOR_X - 4, POS_MENU_IND_Y + (opt_pos * 12), options, clr, Black, 0);		// yes, normal position
+	UiMenu_DisplayValue(options,clr,opt_pos);
 	if(mode == 1)	{	// Shifted over
-		if(opt_oldpos != 999)		// was the position of a previous cursor stored?
-			UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y + (opt_oldpos * 12), " ", Black, Black, 0);	// yes - erase it
-		//
-		opt_oldpos = opt_pos;	// save position of new "old" cursor position
-		UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y + (opt_pos * 12), "<", Green, Black, 0);	// place cursor at active position
+	  UiMenu_MoveCursor(opt_pos);
 	}
 	//
 	return;
 }
 
-//
-// This code is under development - EXPECT ERRORS, DAMMIT!
-//
-//*----------------------------------------------------------------------------
-//* Function Name       : UiDriverMemMenu
-//* Object              : Drive Display of channel memory data
-//* Input Parameters    : none
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-//
-void UiDriverMemMenu(void)
-{
-	static bool update_vars = 1;
-	static uchar change_detect = 255;
-	static	uchar menu_num = 99;
-	static	uchar old_menu_num = 0;
-	uchar var;
-	char txt[32];
 
-	sprintf(txt, " %d   ", (int)(ts.menu_item));
-	UiLcdHy28_PrintText    ((POS_RIT_IND_X + 1), (POS_RIT_IND_Y + 20),txt,White,Grid,0);
-
-	if(change_detect != ts.menu_item)	{	// has menu selection changed?
-		update_vars = 1;					// yes - indicate that we should update on-screen info
-		//
-	}
-
-	if(update_vars)	{						// change detected?
-		update_vars = 0;					// yes, reset flag
-		change_detect = ts.menu_item;
-
-		// each menu is composed of a fixed number of entries
-		// identified by an incrementing index number, so we can
-		// derive menu_num from  menu_item number of interest
-		menu_num = ts.menu_item / MENUSIZE;
-		if(menu_num != old_menu_num)	{
-				old_menu_num = menu_num;
-				for(var = menu_num * MENUSIZE; var < ((menu_num+1) * MENUSIZE); var++)
-							UiDriverUpdateMemLines(var);
-		}
-	}
-}
 
 
 //*----------------------------------------------------------------------------
@@ -3257,8 +3502,11 @@ void UiDriverMemMenu(void)
 //* Functions called    :
 //*----------------------------------------------------------------------------
 //
-void UiDriverUpdateMemLines(uchar var)
+
+
+void UiMenu_UpdateMemLines(uchar var)
 {
+  /*
 	ulong opt_pos;					// y position of option
 	static ulong opt_oldpos = 999;	// y position of option
 	// ulong	mem_mode, mem_freq_high, mem_freq_low;		// holders to store the memory that has been read
@@ -3282,5 +3530,105 @@ void UiDriverUpdateMemLines(uchar var)
 		opt_oldpos = opt_pos;	// save position of new "old" cursor position
 		UiLcdHy28_PrintText(POS_MENU_CURSOR_X, POS_MENU_IND_Y + (opt_pos * 12), "<", Green, Black, 0);	// place cursor at active position
 //
+
+  */
 	return;
+}
+
+
+//
+// This code is under development - EXPECT ERRORS, DAMMIT!
+//
+//*----------------------------------------------------------------------------
+//* Function Name       : UiDriverMemMenu
+//* Object              : Drive Display of channel memory data
+//* Input Parameters    : none
+//* Output Parameters   :
+//* Functions called    :
+//*----------------------------------------------------------------------------
+//
+void UiMenu_MemMenu(void)
+{
+  /*
+    static bool update_vars = 1;
+    static uchar change_detect = 255;
+    static  uchar menu_num = 99;
+    static  uchar old_menu_num = 0;
+    uchar var;
+    char txt[32];
+
+    sprintf(txt, " %d   ", (int)(ts.menu_item));
+    UiLcdHy28_PrintText    ((POS_RIT_IND_X + 1), (POS_RIT_IND_Y + 20),txt,White,Grid,0);
+
+    if(change_detect != ts.menu_item)   {   // has menu selection changed?
+        update_vars = 1;                    // yes - indicate that we should update on-screen info
+        //
+    }
+
+    if(update_vars) {                       // change detected?
+        update_vars = 0;                    // yes, reset flag
+        change_detect = ts.menu_item;
+
+        // each menu is composed of a fixed number of entries
+        // identified by an incrementing index number, so we can
+        // derive menu_num from  menu_item number of interest
+        menu_num = ts.menu_item / MENUSIZE;
+        if(menu_num != old_menu_num)    {
+                old_menu_num = menu_num;
+                for(var = menu_num * MENUSIZE; var < ((menu_num+1) * MENUSIZE); var++)
+                            UiMenu_UpdateMemLines(var);
+        }
+    }
+    */
+}
+
+
+
+void UiMenu_RenderChangeItemValue(int16_t pot_diff) {
+  if(pot_diff < 0)  {
+    ts.menu_var--;      // increment selected item
+  }
+  else  {
+    ts.menu_var++;      // decrement selected item
+  }
+  UiMenu_RenderMenu(MENU_PROCESS_VALUE_CHANGE);        // perform update of selected item
+}
+
+void UiMenu_RenderChangeItem(int16_t pot_diff) {
+  if(pot_diff < 0)    {
+            ts.menu_item--;
+    }
+    else  if(pot_diff > 0)  {
+        ts.menu_item++;
+    }
+    ts.menu_var = 0;            // clear variable that is used to change a menu item
+    UiMenu_RenderMenu(MENU_PROCESS_VALUE_CHANGE);      // Update that menu item
+}
+
+void UiMenu_RenderLastScreen() {
+  while (menu[MENUSIZE-1].entryItem != NULL && UiMenu_NextMenuEntry(menu[MENUSIZE-1].entryItem) != NULL ) {
+    UiMenu_DisplayMoveSlotsForward(MENUSIZE);
+  }
+  UiMenu_RenderMenu(MENU_RENDER_ONLY);
+}
+
+void UiMenu_RenderFirstScreen() {
+  init_done = false;
+  UiMenu_RenderMenu(MENU_RENDER_ONLY);
+}
+
+bool UiMenu_RenderNextScreen() {
+  bool retval = UiMenu_DisplayMoveSlotsForward(MENUSIZE);
+  if (retval) {
+    UiMenu_RenderMenu(MENU_RENDER_ONLY);
+  }
+  return retval;
+}
+
+bool UiMenu_RenderPrevScreen() {
+  bool retval = UiMenu_DisplayMoveSlotsBackwards(MENUSIZE);
+  if (retval) {
+    UiMenu_RenderMenu(MENU_RENDER_ONLY);
+  }
+  return retval;
 }

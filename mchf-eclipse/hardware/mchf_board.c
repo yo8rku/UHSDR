@@ -673,7 +673,7 @@ void mchf_board_power_off(void)
 	char	tx[40];
 	// Power off all - high to disable main regulator
 
-	UiDriverClearSpectrumDisplay();	// clear display under spectrum scope
+	UiSpectrumClearDisplay();	// clear display under spectrum scope
 
 	Codec_Mute(1);	// mute audio when powering down
 
@@ -732,7 +732,7 @@ void mchf_board_power_off(void)
 	ts.powering_down = 1;	// indicate that we should be powering down
 
 	if(ts.ser_eeprom_in_use != 0x20)
-	    UiDriverSaveEepromValuesPowerDown();		// save EEPROM values again - to make sure...
+	    UiConfiguration_SaveEepromValues();		// save EEPROM values again - to make sure...
 
 	//
 	// Actual power-down moved to "UiDriverHandlePowerSupply()" with part of delay
@@ -752,7 +752,7 @@ void mchf_board_power_off(void)
 //*----------------------------------------------------------------------------
 void mchf_board_init(void)
 {
-	// Enable clock on all ports
+  	// Enable clock on all ports
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
@@ -788,7 +788,9 @@ void mchf_board_init(void)
 	mchf_hw_i2c2_init();
 
 	// LCD Init
-	UiLcdHy28_Init();
+	ts.display_type = UiLcdHy28_Init();
+	// we could now implement some error strategy if no display is present
+	// i.e. 0 is returned
 
 	// Encoders init
 	UiRotaryFreqEncoderInit();

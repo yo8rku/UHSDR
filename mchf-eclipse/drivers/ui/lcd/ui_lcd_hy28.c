@@ -8,25 +8,21 @@
 **  File name:                                                                     **
 **  Description:                                                                   **
 **  Last Modified:                                                                 **
-**  Licence:      CC BY-NC-SA 3.0                                                **
+**  Licence:      CC BY-NC-SA 3.0                                                  **
 ************************************************************************************/
 
 // Optimization disable for this file
-#pragma GCC optimize "O0"
+// #pragma GCC optimize "O0"
 
 
 // Common
 #include "mchf_board.h"
 
 #include <stdio.h>
-#include <eeprom.h>
 
 #include "ui_lcd_hy28_fonts.h"
 #include "ui_lcd_hy28.h"
-#include "ui_si570.h"
 
-// For spectrum display struct
-#include "audio_driver.h"
 
 // Saved fonts
 extern sFONT GL_Font8x8;
@@ -36,19 +32,21 @@ extern sFONT GL_Font12x12;
 extern sFONT GL_Font16x24;
 
 // Transceiver state public structure
-__IO TransceiverState ts;
+extern __IO TransceiverState ts;
 
-//uchar use_spi = 0;
+
 int16_t lcd_cs;
 GPIO_TypeDef* lcd_cs_pio;
 
-// ------------------------------------------------
-// Spectrum display
-extern __IO   SpectrumDisplay      sd;
+uint16_t display_use_spi;
 
-extern __IO OscillatorState os;		// oscillator values - including Si570 startup frequency, displayed on splash screen
+const uint8_t touchscreentable [] = {0x0c,0x0d,0x0e,0x0f,0x12,0x13,0x14,0x15,0x16,0x18,0x1c,0x1d,0x1e,0x1f,0x22,
+0x23,0x24,0x25,0x26,0x27,0x2c,0x2d,0x2e,0x30,0x32,0x34,0x35,0x36,0x3a,0x3c,0x40,0x42,0x44,0x45,0x46,0x47,0x4c,
+0x4d,0x4e,0x52,0x54,0x55,0x56,0x5c,0x5d,0x60,0x62,0x64,0x65,0x66,0x67,0x6c,0x6d,0x6e,0x74,0x75,0x76,0x77,0x7c,0x7d,0x80};
+
 
 static void UiLcdHy28_Delay(ulong delay);
+static void UiLcdHy28_Test(void);
 
 //*----------------------------------------------------------------------------
 //* Function Name       : UiLcdHy28_BacklightInit
@@ -80,7 +78,7 @@ void UiLcdHy28_BacklightInit(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_SpiInit()
+void UiLcdHy28_SpiInit(bool hispeed)
 {
    GPIO_InitTypeDef GPIO_InitStructure;
    SPI_InitTypeDef  SPI_InitStructure;
@@ -92,6 +90,7 @@ void UiLcdHy28_SpiInit()
    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
    // SPI SCK pin configuration
    GPIO_InitStructure.GPIO_Pin = LCD_SCK;
@@ -112,14 +111,14 @@ void UiLcdHy28_SpiInit()
 
    // SPI configuration
    SPI_I2S_DeInit(SPI2);
-   SPI_InitStructure.SPI_Direction       = SPI_Direction_2Lines_FullDuplex;
-   SPI_InitStructure.SPI_DataSize          = SPI_DataSize_8b;
-   SPI_InitStructure.SPI_CPOL             = SPI_CPOL_High;
-   SPI_InitStructure.SPI_CPHA             = SPI_CPHA_2Edge;
-   SPI_InitStructure.SPI_NSS             = SPI_NSS_Soft;
-   SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4;   // max speed presc_8 with 50Mhz GPIO, max 4 with 100 Mhz
-   SPI_InitStructure.SPI_FirstBit          = SPI_FirstBit_MSB;
-   SPI_InitStructure.SPI_Mode             = SPI_Mode_Master;
+   SPI_InitStructure.SPI_Direction		= SPI_Direction_2Lines_FullDuplex;
+   SPI_InitStructure.SPI_DataSize		= SPI_DataSize_8b;
+   SPI_InitStructure.SPI_CPOL			= SPI_CPOL_High;
+   SPI_InitStructure.SPI_CPHA			= SPI_CPHA_2Edge;
+   SPI_InitStructure.SPI_NSS			= SPI_NSS_Soft;
+   SPI_InitStructure.SPI_BaudRatePrescaler = hispeed?SPI_BaudRatePrescaler_2:SPI_BaudRatePrescaler_4;   // max speed presc_8 with 50Mhz GPIO, max 4 with 100 Mhz
+   SPI_InitStructure.SPI_FirstBit		= SPI_FirstBit_MSB;
+   SPI_InitStructure.SPI_Mode			= SPI_Mode_Master;
    SPI_Init(SPI2, &SPI_InitStructure);
 
    // Enable SPI2
@@ -159,6 +158,7 @@ void UiLcdHy28_SpiDeInit()
    // Set as inputs
    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
    // SPI SCK pin configuration
    GPIO_InitStructure.GPIO_Pin = LCD_SCK;
@@ -328,7 +328,7 @@ void UiLcdHy28_FSMCConfig(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_SendByteSpi(uint8_t byte)
+static inline void UiLcdHy28_SendByteSpi(uint8_t byte)
 {
    // while ((SPI2>SR & (SPI_I2S_FLAG_TXE) == (uint16_t)RESET);
    // SPI2->DR = Data;
@@ -339,7 +339,7 @@ void UiLcdHy28_SendByteSpi(uint8_t byte)
    SPI_I2S_ReceiveData(SPI2);
 
 }
-void UiLcdHy28_SendByteSpiFast(uint8_t byte)
+static inline void UiLcdHy28_SendByteSpiFast(uint8_t byte)
 {
 
    while ((SPI2->SR & (SPI_I2S_FLAG_TXE)) == (uint16_t)RESET);
@@ -430,7 +430,7 @@ void UiLcdHy28_WriteDataSpi( unsigned short data)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_WriteDataSpiStart(void)
+static inline void UiLcdHy28_WriteDataSpiStart()
 {
    UiLcdHy28_SendByteSpiFast(SPI_START | SPI_WR | SPI_DATA);    /* Write : RS = 1, RW = 0       */
 }
@@ -442,9 +442,9 @@ void UiLcdHy28_WriteDataSpiStart(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_WriteDataOnly( unsigned short data)
+static inline void UiLcdHy28_WriteDataOnly( unsigned short data)
 {
-   if(sd.use_spi)
+   if(display_use_spi)
    {
       UiLcdHy28_SendByteSpiFast((data >>   8));      /* Write D8..D15                */
       UiLcdHy28_SendByteSpiFast((data & 0xFF));      /* Write D0..D7                 */
@@ -493,9 +493,9 @@ unsigned short UiLcdHy28_ReadDataSpi(void)
 void UiLcdHy28_WriteReg( unsigned short LCD_Reg, unsigned short LCD_RegValue)
 {
    if(GPIO_ReadInputDataBit(TP_IRQ_PIO,TP_IRQ) == 0)	// touchscreen pressed -> read data
-	get_touchscreen_coordinates();
+	UiLcdHy28_GetTouchscreenCoordinates(1);
 
-   if(sd.use_spi)
+   if(display_use_spi)
     {
      UiLcdHy28_WriteIndexSpi(LCD_Reg);
      UiLcdHy28_WriteDataSpi(LCD_RegValue);
@@ -516,7 +516,7 @@ void UiLcdHy28_WriteReg( unsigned short LCD_Reg, unsigned short LCD_RegValue)
 //*----------------------------------------------------------------------------
 unsigned short UiLcdHy28_ReadReg( unsigned short LCD_Reg)
 {
-   if(sd.use_spi)
+   if(display_use_spi)
    {
       // Write 16-bit Index (then Read Reg)
       UiLcdHy28_WriteIndexSpi(LCD_Reg);
@@ -552,9 +552,9 @@ static void UiLcdHy28_SetCursorA( unsigned short Xpos, unsigned short Ypos )
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_WriteRAM_Prepare(void)
+static void UiLcdHy28_WriteRAM_Prepare(void)
 {
-   if(sd.use_spi)
+   if(display_use_spi)
    {
       UiLcdHy28_WriteIndexSpi(0x0022);
       GPIO_ResetBits(lcd_cs_pio, lcd_cs);
@@ -564,9 +564,9 @@ void UiLcdHy28_WriteRAM_Prepare(void)
       LCD_REG = 0x22;
 }
 
-inline void UiLcdHy28_WriteRAM_Finish(void)
+static inline void UiLcdHy28_WriteRAM_Finish(void)
 {
-   if(sd.use_spi)
+   if(display_use_spi)
    {
       GPIO_SetBits(lcd_cs_pio, lcd_cs);
    }
@@ -599,7 +599,7 @@ static inline void UiLcdHy28_BulkPixel_BufferFlush() {
 	pixelcount = 0;
 }
 
-static inline void UiLcdHy28_BulkPixel_Put(uint16_t pixel) {
+inline void UiLcdHy28_BulkPixel_Put(uint16_t pixel) {
 	pixelbuffer[pixelcount++] = pixel;
 		if (pixelcount == PIXELBUFFERSIZE) {
 			UiLcdHy28_BulkPixel_BufferFlush();
@@ -832,7 +832,7 @@ void UiLcdHy28_BulkWriteColor(uint16_t Color, uint32_t len)
 void UiLcdHy28_CloseBulkWrite(void)
 {
 
-   if(sd.use_spi)	{		// SPI enabled?
+   if(display_use_spi)	{		// SPI enabled?
 
 	   GPIO_SetBits(lcd_cs_pio, lcd_cs);	// bulk-write complete!
 
@@ -998,304 +998,6 @@ void UiLcdHy28_PrintTextRight(ushort Xpos, ushort Ypos, const char *str,ushort C
 }
 
 //*----------------------------------------------------------------------------
-//* Function Name       : UiLcdHy28_DrawSpectrum
-//* Object              : repaint spectrum scope control
-//* Input Parameters    :
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-void UiLcdHy28_DrawSpectrum(q15_t *fft,ushort color,ushort shift)
-{
-   ushort       i,k,x,y,y1,len,sh,clr;
-   bool      repaint_v_grid = false;
-
-   if(shift)
-      sh = (SPECTRUM_WIDTH/2);
-   else
-      sh = 0;
-
-   // Draw spectrum
-   for(x = (SPECTRUM_START_X + sh + 0); x < (POS_SPECTRUM_IND_X + SPECTRUM_WIDTH/2 + sh); x++)
-   {
-      y = *fft++;
-
-      // Limit vertical
-      if(y > (SPECTRUM_HEIGHT - 15))
-         y = (SPECTRUM_HEIGHT - 15);
-
-      // Data to y position and length
-      y1  = (SPECTRUM_START_Y + SPECTRUM_HEIGHT - 1) - y;
-      len = y;
-
-      // Skip noise
-      if(y == 0)
-         continue;
-
-      // Repaint vertical grid on clear
-      // Basically paint over the grid is allowed
-      // but during spectrum clear instead of masking
-      // grid lines with black - they are repainted
-      if(color == Black)
-      {
-         // Enumerate all saved x positions
-         for(k = 0; k < 7; k++)
-         {
-            // Exit on match
-            if(x == sd.vert_grid_id[k])
-            {
-               // New data for repaint
-               x   = sd.vert_grid_id[k];
-               clr = ts.scope_grid_colour_active;
-               repaint_v_grid = true;
-               break;
-            }
-         }
-      }
-
-      UiLcdHy28_SetCursorA(x, y1);
-      UiLcdHy28_WriteRAM_Prepare();
-
-      // Draw line
-      for(i = 0; i < len; i++)
-      {
-         // Do not check for horizontal grid when we have vertical masking
-         if(!repaint_v_grid)
-         {
-            clr = color;
-
-            // Are we masking over horizontal grid line ?
-            if(color == Black)
-            {
-               // Enumerate all saved y positions
-               for(k = 0; k < 3; k++)
-               {
-                  if(y1 == sd.horz_grid_id[k])
-                  {
-                     clr = ts.scope_grid_colour_active;
-                     break;
-                  }
-               }
-            }
-         }
-
-         UiLcdHy28_WriteDataOnly(clr);
-         // Track absolute position
-         y1++;
-      }
-
-      UiLcdHy28_WriteRAM_Finish();
-      // Reset flag
-      if(repaint_v_grid)
-         repaint_v_grid = 0;
-
-      // ----------------------------------------------------------
-      // ----------------------------------------------------------
-   }
-}
-
-
-// This version of "Draw Spectrum" is revised from the original in that it interleaves the erasure with the drawing
-// of the spectrum to minimize visible flickering  (KA7OEI, 20140916, adapted from original)
-//
-// 20141004 NOTE:  This has been somewhat optimized to prevent drawing vertical line segments that would need to be re-drawn:
-//  - New lines that were shorter than old ones are NOT erased
-//  - Line segments that are to be erased are only erased starting at the position of the new line segment.
-//
-//  This should reduce the amount of CGRAM access - especially via SPI mode - to a minimum.
-//
-
-static bool UiLcdHy28_DrawSpectrum_IsVgrid(uint16_t x, uint32_t color_new, uint16_t* clr_ptr ) {
-	int k;
-	bool repaint_v_grid = false;
-	// Enumerate all saved x positions
-	for(k = 0; k < 7; k++)
-	{
-		// Exit on match
-		if(x == sd.vert_grid_id[k])
-		{
-			// New data for repaint
-			x   = sd.vert_grid_id[k];
-			if((sd.magnify) && (k == 3))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if((ts.iq_freq_mode == FREQ_IQ_CONV_M6KHZ) && (k == 4) && (!sd.magnify))			// place the (spectrum) center line with the selected color based on translate mode
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if((ts.iq_freq_mode == FREQ_IQ_CONV_P6KHZ) && (k == 2) && (!sd.magnify))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if((ts.iq_freq_mode == FREQ_IQ_CONV_P12KHZ) && (k == 1) && (!sd.magnify))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if((ts.iq_freq_mode == FREQ_IQ_CONV_M12KHZ) && (k == 5) && (!sd.magnify))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if((ts.iq_freq_mode == FREQ_IQ_CONV_P6KHZ || ts.iq_freq_mode == FREQ_IQ_CONV_P12KHZ) && (k == 2) && (!sd.magnify))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else if ((ts.iq_freq_mode == FREQ_IQ_CONV_MODE_OFF) && (k == 3) && (!sd.magnify))
-				*clr_ptr = ts.scope_centre_grid_colour_active;
-			else
-				*clr_ptr = ts.scope_grid_colour_active;
-
-			repaint_v_grid = true;
-			break;
-		}
-	}
-
-	return repaint_v_grid;
-}
-
-//*----------------------------------------------------------------------------
-//* Function Name       : UiLcdHy28_DrawSpectrum_Interleaved
-//* Object              : repaint spectrum scope control
-//* Input Parameters    :
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-void    UiLcdHy28_DrawSpectrum_Interleaved(q15_t *fft_old, q15_t *fft_new, const ushort color_old, const ushort color_new, const ushort shift)
-{
-   uint16_t      i, k, x, y_old , y_new, y1_old, y1_new, len_old, len_new, sh, clr;
-   bool      repaint_v_grid = false;
-
-   if(shift)
-      sh = (SPECTRUM_WIDTH/2)-1;   // Shift to fill gap in center
-   else
-      sh = 1;                  // Shift to fill gap in center
-
-   for(x = (SPECTRUM_START_X + sh + 0); x < (POS_SPECTRUM_IND_X + SPECTRUM_WIDTH/2 + sh); x++)
-   {
-	  y_old = *fft_old++;
-      y_new = *fft_new++;
-
-      // Limit vertical
-      if(y_old > (SPECTRUM_HEIGHT - 7))
-         y_old = (SPECTRUM_HEIGHT - 7);
-
-      if(y_new > (SPECTRUM_HEIGHT - 7))
-         y_new = (SPECTRUM_HEIGHT - 7);
-
-      // Data to y position and length
-      y1_old  = (SPECTRUM_START_Y + SPECTRUM_HEIGHT - 1) - y_old;
-      len_old = y_old;
-
-      y1_new  = (SPECTRUM_START_Y + SPECTRUM_HEIGHT - 1) - y_new;
-      len_new = y_new;
-
-      //
-      if(y_old <= y_new)	// is old line going to be overwritten by new line, anyway?
-         goto draw_new;		// only draw new line - don't bother erasing old line...
-
-
-      // Repaint vertical grid on clear
-      // Basically paint over the grid is allowed
-      // but during spectrum clear instead of masking
-      // grid lines with black - they are repainted
-      // TODO: This code is  always executed, since this function is always called with color_old == Black
-      if(color_old == Black) {
-    	  repaint_v_grid = UiLcdHy28_DrawSpectrum_IsVgrid(x, color_new, &clr);
-      }
-      //
-      UiLcdHy28_SetCursorA(x, y1_old);
-      UiLcdHy28_WriteRAM_Prepare();
-
-      // Draw vertical line, starting only with position of where new line would be!
-      for(i = y_new; i < len_old; i++)
-      {
-         // Do not check for horizontal grid when we have vertical masking
-         if(!repaint_v_grid)
-         {
-            clr = color_old;
-
-            // Are we trying to paint over horizontal grid line ?
-            // prevent that by changing this points color to the grid color
-            // TODO: This code is  always executed, since this function is always called with color_old == Black
-            // This code does not make sense to me: it should check if the CURRENT y value (stored in i) is a horizontal
-            // grid, not the y1_old.
-            if(color_old == Black)
-            {
-               // Enumerate all saved y positions
-               for(k = 0; k < 3; k++)
-               {
-                  if(y1_old == sd.horz_grid_id[k])
-                  {
-                     clr = ts.scope_grid_colour_active;
-                     break;
-                  }
-               }
-            }
-         }
-
-         UiLcdHy28_WriteDataOnly(clr);
-         // Track absolute position
-         y1_old++;
-      }
-
-      UiLcdHy28_WriteRAM_Finish();
-
-      // Reset flag
-      if(repaint_v_grid)
-         repaint_v_grid = 0;
-
-      // ----------------------------------------------------------
-      //
-      draw_new:
-      //
-      if(y_new == 0)	// no new line to be drawn?
-         continue;
-      //
-      // Repaint vertical grid on clear
-      // Basically paint over the grid is allowed
-      // but during spectrum clear instead of masking
-      // grid lines with black - they are repainted
-      //
-      //
-      // TODO: This code is  never executed, since this function is never called with color_new == Black
-      if(color_new == Black) {
-    	  repaint_v_grid = UiLcdHy28_DrawSpectrum_IsVgrid(x, color_new, &clr);
-      }
-
-      UiLcdHy28_SetCursorA(x, y1_new);
-      UiLcdHy28_WriteRAM_Prepare();
-
-      // Draw line
-      for(i = 0; i < len_new; i++)
-      {
-         // Do not check for horizontal grid when we have vertical masking
-         if(!repaint_v_grid)
-         {
-            clr = color_new;
-
-            // Are we trying to paint over horizontal grid line ?
-            // prevent that by changing this points color to the grid color
-            // TODO: This code is  never executed, since this function is never called with color_new == Black
-            if(color_new == Black)
-            {
-               // Enumerate all saved y positions
-               for(k = 0; k < 3; k++)
-               {
-                  if(y1_new == sd.horz_grid_id[k])
-                  {
-                     clr = ts.scope_grid_colour_active;
-                     break;
-                  }
-               }
-            }
-         }
-
-         UiLcdHy28_WriteDataOnly(clr);
-         // Track absolute position
-         y1_new++;
-      }
-
-      UiLcdHy28_WriteRAM_Finish();
-
-      // Reset flag
-      if(repaint_v_grid)
-         repaint_v_grid = 0;
-      //
-   }
-}
-
-
-
-
-
-//*----------------------------------------------------------------------------
 //* Function Name       : UiLcdHy28_InitA
 //* Object              :
 //* Input Parameters    :
@@ -1443,12 +1145,12 @@ uchar UiLcdHy28_InitA(void)
       UiLcdHy28_WriteReg(0x0061,0x0003);   // Driver Output Control
       UiLcdHy28_WriteReg(0x006A,0x0000);   // Vertical Scroll Control
 
-      UiLcdHy28_WriteReg(0x0080,0x0000);   // Display Position �C Partial Display 1
-      UiLcdHy28_WriteReg(0x0081,0x0000);   // RAM Address Start �C Partial Display 1
+      UiLcdHy28_WriteReg(0x0080,0x0000);   // Display Position ?C Partial Display 1
+      UiLcdHy28_WriteReg(0x0081,0x0000);   // RAM Address Start ?C Partial Display 1
       UiLcdHy28_WriteReg(0x0082,0x0000);   // RAM address End - Partial Display 1
-      UiLcdHy28_WriteReg(0x0083,0x0000);   // Display Position �C Partial Display 2
-      UiLcdHy28_WriteReg(0x0084,0x0000);   // RAM Address Start �C Partial Display 2
-      UiLcdHy28_WriteReg(0x0085,0x0000);   // RAM address End �C Partail Display2
+      UiLcdHy28_WriteReg(0x0083,0x0000);   // Display Position ?C Partial Display 2
+      UiLcdHy28_WriteReg(0x0084,0x0000);   // RAM Address Start ?C Partial Display 2
+      UiLcdHy28_WriteReg(0x0085,0x0000);   // RAM address End ?C Partail Display2
       UiLcdHy28_WriteReg(0x0090,0x0013);   // Frame Cycle Control
       UiLcdHy28_WriteReg(0x0092,0x0000);    // Panel Interface Control 2
       UiLcdHy28_WriteReg(0x0093,0x0003);   // Panel Interface control 3
@@ -1544,7 +1246,7 @@ uchar UiLcdHy28_InitA(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiLcdHy28_Test(void)
+static void UiLcdHy28_Test(void)
 {
    // Backlight on - only when all is drawn
    //LCD_BACKLIGHT_PIO->BSRRL = LCD_BACKLIGHT;
@@ -1578,61 +1280,60 @@ void UiLcdHy28_Test(void)
    //UiLcdHy28_PrintText(0,210,"1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ",White,Blue,4);
 }
 
-//*----------------------------------------------------------------------------
-//* Function Name       : UiLcdHy28_Init
-//* Object              : Search interface and LCD init
-//* InZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"""""""""""""""""""""""""""""""""'''''''put Parameters    :
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-uchar UiLcdHy28_Init(void)
+/*
+ * brief Identifies and initializes to HY28x display family
+ *
+ * @returns 0 if no display detected, DISPLAY_HY28x_xxx otherwise, see header
+ */
+
+
+uint8_t UiLcdHy28_Init(void)
 {
+	uint8_t retval = DISPLAY_HY28A_SPI;
    // Backlight
    UiLcdHy28_BacklightInit();
 
    // Select interface, spi HY28A first
-   sd.use_spi = 1;
+   display_use_spi = 1;
 
    lcd_cs = LCD_D11;
    lcd_cs_pio = LCD_D11_PIO;
 
    // Try SPI Init
-   UiLcdHy28_SpiInit();
+   UiLcdHy28_SpiInit(false);
+   // HY28A works only with less then 32 Mhz, so we do low speed
 
    // Reset
    UiLcdHy28_Reset();
 
    // LCD Init
-   if(UiLcdHy28_InitA() == 0)
-      return 0;         // success, SPI found
+   if(UiLcdHy28_InitA() != 0) {
+        // no success, no SPI found
+     retval = DISPLAY_HY28B_SPI;
 
    // SPI disable
    UiLcdHy28_SpiDeInit();
 
    // Select interface, spi HY28B second
-   sd.use_spi = 2;
+   display_use_spi = 2;
 
    lcd_cs = LCD_CS;
    lcd_cs_pio = LCD_CS_PIO;
 
    // Try SPI Init
-   UiLcdHy28_SpiInit();
+   UiLcdHy28_SpiInit(HY28BHISPEED);
+   // Some HY28B work with 50 Mhz, so we do high speed
 
    // Reset
    UiLcdHy28_Reset();
 
    // LCD Init
-   if(UiLcdHy28_InitA() == 0)
-      return 0;         // success, SPI found
-
+   }
+   if(UiLcdHy28_InitA() != 0) {
+      // no success, no SPI found
    // SPI disable
-//   UiLcdHy28_SpiDeInit();
-
-    // SPI enable
-//   UiLcdHy28_SpiInit();
-
    // Select parallel
-   sd.use_spi = 0;
+   display_use_spi = 0;
 
    // Parallel init
    UiLcdHy28_ParallelInit();
@@ -1642,137 +1343,36 @@ uchar UiLcdHy28_Init(void)
    UiLcdHy28_Reset();
 
    // LCD Init
-   UiLcdHy28_InitA();   // on error here ?
+   retval = UiLcdHy28_InitA() != 0?DISPLAY_NONE:DISPLAY_HY28B_PARALLEL;   // on error here
+   }
 
-   return 0;
+   return retval;
 }
 
-//*----------------------------------------------------------------------------
-//* Function Name       : UiLcdHy28_ShowStartUpScreen
-//* Object              :
-//* Input Parameters    :
-//* Output Parameters   :
-//* Functions called    :
-//*----------------------------------------------------------------------------
-void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
+void UiLcdHy28_GetTouchscreenCoordinates(bool mode)
 {
-   uint16_t    i;
- //  uint16_t    t, s, u, v;
-   char   tx[100];
+    uchar i,x,y;
+    GPIO_ResetBits(TP_CS_PIO, TP_CS);
+    UiLcdHy28_SendByteSpi(144);
+    x = UiLcdHy28_ReadByteSpi();
+    UiLcdHy28_SendByteSpi(208);
+    y = UiLcdHy28_ReadByteSpi();
+    GPIO_SetBits(TP_CS_PIO, TP_CS);
 
-   // Clear all
-   UiLcdHy28_LcdClear(Black);
-
-   non_os_delay();
-   // Show first line
-   sprintf(tx,"%s",DEVICE_STRING);
-   UiLcdHy28_PrintText(0,30,tx,Cyan,Black,1);		// Position with original text size:  78,40
-   //
-
-   // Show second line
-   sprintf(tx,"%s",AUTHOR_STRING);
-   UiLcdHy28_PrintText(36,60,tx,White,Black,0);		// 60,60
-
-   // Show third line
-   sprintf(tx,"v %d.%d.%d.%d",TRX4M_VER_MAJOR,TRX4M_VER_MINOR,TRX4M_VER_RELEASE,TRX4M_VER_BUILD);
-   UiLcdHy28_PrintText(110,80,tx,Grey3,Black,0);
-
-/*   // Show fourth line
-   #define GITHUB_IDENT "$Id$"
-   char ty[8];
-   for(i=5;i<12;i++)
-    ty[i-5] = GITHUB_IDENT[i];
-   ty[7] = 0;
-   sprintf(tx,"DF8OE-Github-Commit %s",ty);
-
-//   sprintf(tx,"DF8OE-GitHub-Version %s","0.12.rt.4");
-   UiLcdHy28_PrintText(45,100,tx,Yellow,Black,0);
-*/
-   //
-   Read_EEPROM(EEPROM_FREQ_CONV_MODE, &i);	// get setting of frequency translation mode
-
-   if(!(i & 0xff))	{
-	   sprintf(tx,"WARNING:  Freq. Translation is OFF!!!");
-	   UiLcdHy28_PrintText(16,120,tx,Black,Red3,0);
-	   sprintf(tx,"Translation is STRONGLY recommended!!");
-	   UiLcdHy28_PrintText(16,135,tx,Black,Red3,0);
-   }
-   else	{
-	   sprintf(tx," Freq. Translate On ");
-	   UiLcdHy28_PrintText(80,120,tx,Grey3,Black,0);
-   }
-
-   // Display the mode of the display interface
-   //
-   switch(sd.use_spi) {
-      case 0:
-         sprintf(tx,"LCD: Parallel Mode");
-         break;
-      case 1:
-         sprintf(tx,"LCD: HY28A SPI Mode");
-         break;
-      default:
-         sprintf(tx,"LCD: HY28B SPI Mode");
-   }
-
-   //
-   UiLcdHy28_PrintText(88,150,tx,Grey1,Black,0);
-
-   //
-   // Display startup frequency of Si570, By DF8OE, 201506
-   //
-   unsigned int vorkomma = (unsigned int)(os.fout);
-   unsigned int nachkomma = (unsigned int)roundf((os.fout-vorkomma)*10000);
-
-   sprintf(tx,"%s%u%s%u%s","SI570 startup frequency: ",vorkomma,".",nachkomma," MHz");
-   UiLcdHy28_PrintText(15, 165, tx, Grey1, Black, 0);
-   //
-
-   if(ts.ee_init_stat != FLASH_COMPLETE)	{	// Show error code if problem with EEPROM init
-	   sprintf(tx, "EEPROM Init Error Code:  %d", ts.ee_init_stat);
-	   UiLcdHy28_PrintText(60,180,tx,White,Black,0);
-   }
-   else	{
-	   ushort adc2, adc3;
-	   adc2 = ADC_GetConversionValue(ADC2);
-	   adc3 = ADC_GetConversionValue(ADC3);
-	   if((adc2 > MAX_VSWR_MOD_VALUE) && (adc3 > MAX_VSWR_MOD_VALUE))	{
-		   sprintf(tx, "SWR Bridge resistor mod NOT completed!");
-		   UiLcdHy28_PrintText(8,180,tx,Red3,Black,0);
-		   //	sprintf(tx, "Value=%d,%d",adc2, adc3);			// debug
-		   //	UiLcdHy28_PrintText(60,170,tx,Red,Black,0);		// debug
-	   }
-   }
-
-   // Additional Attrib line 1
-   sprintf(tx,"%s",ATTRIB_STRING1);
-   UiLcdHy28_PrintText(54,195,tx,Grey1,Black,0);
-
-   // Additional Attrib line 2
-   sprintf(tx,"%s",ATTRIB_STRING2);
-   UiLcdHy28_PrintText(42,210,tx,Grey1,Black,0);
-
-   // Additional Attrib line 3
-   sprintf(tx,"%s",ATTRIB_STRING3);
-   UiLcdHy28_PrintText(50,225,tx,Grey1,Black,0);
-
-   // Backlight on
-   LCD_BACKLIGHT_PIO->BSRRL = LCD_BACKLIGHT;
-
-   // On screen delay - decrease if drivers init takes longer
-   for(i = 0; i < hold_time; i++)
-      non_os_delay();
-}
-
-
-void get_touchscreen_coordinates(void)
-{
-   GPIO_ResetBits(TP_CS_PIO, TP_CS);
-   UiLcdHy28_SendByteSpi(144);
-   ts.tp_x = UiLcdHy28_ReadByteSpi();
-   UiLcdHy28_SendByteSpi(208);
-   ts.tp_y = UiLcdHy28_ReadByteSpi();
-   GPIO_SetBits(TP_CS_PIO, TP_CS);
+    if(mode)
+	{
+	for(i=0; touchscreentable[i]<= x; i++)
+	    ;
+	ts.tp_x = 60-i;
+	for(i=0; touchscreentable[i]<= y; i++)
+	    ;
+	ts.tp_y = i--;
+	}
+    else
+	{
+	ts.tp_x = x;
+	ts.tp_y = y;
+	}
 }
 
 #pragma GCC optimize("O0")
