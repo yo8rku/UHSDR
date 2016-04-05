@@ -92,7 +92,6 @@ void CriticalError(ulong error)
 //*----------------------------------------------------------------------------
 void NMI_Handler(void)
 {
-	printf("NMI_Handler called\n\r");
 	CriticalError(1);
 }
 
@@ -106,7 +105,6 @@ void NMI_Handler(void)
 //*----------------------------------------------------------------------------
 void HardFault_Handler(void)
 {
-	printf("HardFault_Handler called\n\r");
 	CriticalError(2);
 }
 
@@ -120,7 +118,6 @@ void HardFault_Handler(void)
 //*----------------------------------------------------------------------------
 void MemManage_Handler(void)
 {
-	printf("MemManage_Handler called\n\r");
 	CriticalError(3);
 }
 
@@ -134,7 +131,6 @@ void MemManage_Handler(void)
 //*----------------------------------------------------------------------------
 void BusFault_Handler(void)
 {
-	printf("BusFault_Handler called\n\r");
 	CriticalError(4);
 }
 
@@ -148,7 +144,6 @@ void BusFault_Handler(void)
 //*----------------------------------------------------------------------------
 void UsageFault_Handler(void)
 {
-	printf("UsageFault_Handler called\n\r");
 	CriticalError(5);
 }
 
@@ -162,7 +157,6 @@ void UsageFault_Handler(void)
 //*----------------------------------------------------------------------------
 void SVC_Handler(void)
 {
-	printf("SVC_Handler called\n\r");
 	CriticalError(6);
 }
 
@@ -176,7 +170,6 @@ void SVC_Handler(void)
 //*----------------------------------------------------------------------------
 void DebugMon_Handler(void)
 {
-	printf("DebugMon_Handler called\n\r");
 	CriticalError(7);
 }
 
@@ -328,17 +321,9 @@ void TransceiverStateInit(void)
 	ts.rit_value		= 0;					// RIT value
 	ts.agc_mode			= AGC_DEFAULT;			// AGC setting
 	ts.agc_custom_decay	= AGC_CUSTOM_DEFAULT;			// Default setting for AGC custom setting - higher = slower
-	ts.filter_id		= AUDIO_DEFAULT_FILTER;			// startup audio filter
 
-	{
-	  int idx;
-	  for (idx = 0; idx < AUDIO_FILTER_NUM; idx++) {
-	    ts.filter_select[idx] = FilterInfo[idx].config_default;
-	  }
-	}
+	ts.USE_NEW_PHASE_CORRECTION = 1; // just for testing new phase correction path
 
-//	ts.filter_wide_select	= FILTER_WIDE_DEFAULT;	// This is enabled by default
-	//
 	ts.st_gain			= DEFAULT_SIDETONE_GAIN;	// Sidetone gain
 	ts.keyer_mode		= CW_MODE_IAM_B;			// CW keyer mode
 	ts.keyer_speed		= DEFAULT_KEYER_SPEED;			// CW keyer speed
@@ -351,12 +336,14 @@ void TransceiverStateInit(void)
 	//
 	ts.tx_iq_lsb_gain_balance 	= 0;				// Default settings for RX and TX gain and phase balance
 	ts.tx_iq_usb_gain_balance 	= 0;
-	ts.tx_iq_lsb_gain_balance 	= 0;
-	ts.tx_iq_usb_gain_balance 	= 0;
+	ts.tx_iq_lsb_phase_balance 	= 0;
+	ts.tx_iq_usb_phase_balance 	= 0;
+
 	ts.rx_iq_lsb_gain_balance = 0;
 	ts.rx_iq_usb_gain_balance = 0;
 	ts.rx_iq_lsb_phase_balance = 0;
 	ts.rx_iq_usb_phase_balance = 0;
+	ts.rx_iq_am_phase_balance = 0;
 	ts.rx_iq_am_gain_balance = 0;
 	ts.rx_iq_fm_gain_balance = 0;
 	ts.tx_iq_am_gain_balance = 0;
@@ -536,7 +523,7 @@ void TransceiverStateInit(void)
 	ts.tune_power_level = 0;					// Tune with FULL POWER
 	ts.xlat = 0;							// 0 = report base frequency, 1 = report xlat-frequency;
 	ts.audio_int_counter = 0;					//test DL2FW
-
+	ts.sam_enabled = 0;						// demodulation mode SAM not enabled
 
 	//ts.filter_path = 52; // uncomment to use  filter path of given number -1 (hack, filter path is used all the time)
 }
@@ -551,17 +538,8 @@ void TransceiverStateInit(void)
 //*----------------------------------------------------------------------------
 void MiscInit(void)
 {
-	//printf("misc init...\n\r");
-
 	// Init Soft DDS
 	softdds_setfreq(0.0,ts.samp_rate,0);
-	//softdds_setfreq(500.0,ts.samp_rate,0);
-	//softdds_setfreq(1000.0,ts.samp_rate,0);
-	//softdds_setfreq(2000.0,ts.samp_rate,0);
-	//softdds_setfreq(3000.0,ts.samp_rate,0);
-	//softdds_setfreq(4000.0,ts.samp_rate,0);
-
-	//printf("misc init ok\n\r");
 }
 
 /*
@@ -626,15 +604,8 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
   UiLcdHy28_PrintText(110,80,tx,Grey3,Black,0);
 
   // Show fourth line
-#define GITHUB_IDENT "$Id: 5dbafdb7751341f70f9c05951696de9ee532e0bc $"
-  char ty[8];
-  for(i=5;i<12;i++)
-    ty[i-5] = GITHUB_IDENT[i];
-  ty[7] = 0;
-  sprintf(tx,"DF8OE-Github-Commit %s",ty);
-
-  //   sprintf(tx,"DF8OE-GitHub-Version %s","0.12.rt.4");
-  UiLcdHy28_PrintText(45,100,tx,Yellow,Black,0);
+  sprintf(tx,"Build on %s%s%s",__DATE__," at ",__TIME__);
+  UiLcdHy28_PrintText(35,100,tx,Yellow,Black,0);
 
   //
   Read_EEPROM(EEPROM_FREQ_CONV_MODE, &i);  // get setting of frequency translation mode
@@ -692,8 +663,6 @@ void UiLcdHy28_ShowStartUpScreen(ulong hold_time)
     if((adc2 > MAX_VSWR_MOD_VALUE) && (adc3 > MAX_VSWR_MOD_VALUE))   {
       sprintf(tx, "SWR Bridge resistor mod NOT completed!");
       UiLcdHy28_PrintText(8,180,tx,Red3,Black,0);
-      //   sprintf(tx, "Value=%d,%d",adc2, adc3);          // debug
-      //   UiLcdHy28_PrintText(60,170,tx,Red,Black,0);     // debug
     }
   }
 
@@ -878,8 +847,6 @@ int main(void)
 	//
 	AudioFilter_CalcTxPhaseAdj();	//
 
-	UiDriverLoadFilterValue();	// Get filter value so we can init audio with it
-
 	// Audio HW init
 	// audio_driver_init();
 
@@ -900,6 +867,10 @@ int main(void)
 	AudioManagement_LoadToneBurstMode();	// load/set tone burst frequency
 	//
 	AudioManagement_LoadBeepFreq();		// load/set beep frequency
+
+	AudioFilter_SetDefaultMemories();
+
+	UiInitRxParms();
 	//
 	ts.rx_gain[RX_AUDIO_SPKR].value_old = 99;		// Force update of volume control
 	uiCodecMute(0);					// make cure codec is un-muted
@@ -912,10 +883,6 @@ int main(void)
 
 	if (ts.cat_mode_active)
 		cat_driver_init();
-
-#ifdef DEBUG_BUILD
-	printf("== main loop starting ==\n\r");
-#endif
 
 	// Transceiver main loop
 	for(;;)

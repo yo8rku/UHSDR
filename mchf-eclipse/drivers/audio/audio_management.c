@@ -147,7 +147,7 @@ void AudioManagement_CalcRxIqGainAdj(void)
     else
         ts.rx_adj_gain_var_i = (float)ts.rx_iq_usb_gain_balance;        // get current gain adjustment setting  USB and other modes
     //
-    ts.rx_adj_gain_var_i /= 1024;       // fractionalize it
+    ts.rx_adj_gain_var_i /= SCALING_FACTOR_IQ_AMPLITUDE_ADJUST;       // fractionalize it
     ts.rx_adj_gain_var_q = -ts.rx_adj_gain_var_i;               // get "invert" of it
     ts.rx_adj_gain_var_i += 1;      // offset it by one (e.g. 0 = unity)
     ts.rx_adj_gain_var_q += 1;
@@ -174,7 +174,7 @@ void AudioManagement_CalcTxIqGainAdj(void)
         ts.tx_adj_gain_var_i = (float)ts.tx_iq_usb_gain_balance;        // get current gain adjustment setting for USB and other non AM/FM modes
 
     //
-    ts.tx_adj_gain_var_i /= 1024;       // fractionalize it
+    ts.tx_adj_gain_var_i /= SCALING_FACTOR_IQ_AMPLITUDE_ADJUST;       // fractionalize it
     ts.tx_adj_gain_var_q = -ts.tx_adj_gain_var_i;               // get "invert" of it
     ts.tx_adj_gain_var_i += 1;      // offset it by one (e.g. 0 = unity)
     ts.tx_adj_gain_var_q += 1;
@@ -329,7 +329,7 @@ void AudioManagement_LoadBeepFreq(void)
 {
     float calc;
 
-    if(ts.misc_flags2 & 4)  {   // is beep enabled?
+    if(ts.misc_flags2 & MISC_FLAGS2_KEY_BEEP_ENABLE)  {   // is beep enabled?
         ads.beep_word = ts.beep_frequency * 65536;      // yes - calculated/load frequency
         ads.beep_word /= 48000;
     }

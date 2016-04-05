@@ -12,6 +12,7 @@
 ************************************************************************************/
 
 #include "mchf_board.h"
+#include "ui_configuration.h"
 #include "ui_lcd_hy28.h"
 #include <stdio.h>
 
@@ -112,11 +113,6 @@ static void mchf_board_debug_init(void)
 
 	// Wait tx ready
 	while (USART_GetFlagStatus(DEBUG_COM, USART_FLAG_TC) == RESET);
-
-	// Debug print details
-	printf("-----------------------------------------------------\n\r");
-	printf("%s v %d.%d.%d.%d\n\r",DEVICE_STRING,TRX4M_VER_MAJOR,TRX4M_VER_MINOR,TRX4M_VER_RELEASE,TRX4M_VER_BUILD);
-	printf("= %s =\n\r",AUTHOR_STRING);
 
 #endif
 }

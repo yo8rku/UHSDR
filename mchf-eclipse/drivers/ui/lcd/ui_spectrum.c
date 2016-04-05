@@ -21,7 +21,11 @@
 #include "waterfall_colours.h"
 // ------------------------------------------------
 // Spectrum display public
-__IO    SpectrumDisplay         sd;
+__IO    SpectrumDisplay  __attribute__ ((section (".ccm")))       sd;
+// this data structure is now located in the Core Connected Memory of the STM32F4
+// this is highly hardware specific code. This data structure nicely fills the 64k with roughly 60k.
+// If this data structure is being changed,  be aware of the 64k limit. See linker script arm-gcc-link.ld
+
 
 static void 	UiDriverFFTWindowFunction(char mode);
 
@@ -168,7 +172,7 @@ void UiSpectrumCreateDrawArea(void)
 	for(i = 0; i < 16; i++)
 		UiLcdHy28_DrawHorizLineWithGrad(POS_SPECTRUM_IND_X,(POS_SPECTRUM_IND_Y - 20 + i),POS_SPECTRUM_IND_W,COL_SPECTRUM_GRAD);
 
-	if(!(ts.misc_flags1 & 128))	{	// Display Spectrum Scope banner if enabled
+	if(!(ts.misc_flags1 & MISC_FLAGS1_WFALL_SCOPE_TOGGLE))	{	// Display Spectrum Scope banner if enabled
 
 	// Top band text - middle caption
 	UiLcdHy28_PrintText(			(POS_SPECTRUM_IND_X + slen),
@@ -272,7 +276,7 @@ void UiSpectrumCreateDrawArea(void)
 		//printf("vx: %d\n\r",sd.vert_grid_id[i - 1]);
 	}
 
-	if (((ts.misc_flags1 & 128) && (!ts.waterfall_speed)) || (!(ts.misc_flags1 & 128) && (!ts.scope_speed)))	{
+	if (((ts.misc_flags1 & MISC_FLAGS1_WFALL_SCOPE_TOGGLE) && (!ts.waterfall_speed)) || (!(ts.misc_flags1 & MISC_FLAGS1_WFALL_SCOPE_TOGGLE) && (!ts.scope_speed)))	{
 			// print "disabled" in the middle of the screen if the waterfall or scope was disabled
 			UiLcdHy28_PrintText(			(POS_SPECTRUM_IND_X + 72),
 												(POS_SPECTRUM_IND_Y + 18),

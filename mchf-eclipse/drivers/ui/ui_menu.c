@@ -228,6 +228,34 @@ bool __attribute__ ((noinline)) UiDriverMenuItemChangeEnableOnOff(int var, uint8
 }
 
 
+bool __attribute__ ((noinline)) UiMenu_ChangeFilterPathMemory(int var, uint8_t mode, char* options, uint32_t* clr_ptr, uint16_t filter_mode,uint8_t memory_idx) {
+  uint32_t temp_var = ts.filter_path_mem[filter_mode][memory_idx];
+  uint16_t old_fp = temp_var;
+  // for now just a single location CW for testing
+  bool tchange = UiDriverMenuItemChangeUInt32(var, mode, &temp_var,
+      0,
+      AUDIO_FILTER_PATH_NUM,
+      0,
+      1);
+  if(tchange) {   // did something change?
+    uint16_t fp = AudioFilter_NextApplicableFilterPath(PATH_ALL_APPLICABLE|PATH_DONT_STORE | (temp_var< old_fp?PATH_DOWN:PATH_UP),filter_mode,old_fp);
+    if (fp >= old_fp && temp_var < old_fp) {
+      // wrap around -> we need to insert "0"
+      fp = 0;
+    }
+    ts.filter_path_mem[filter_mode][memory_idx] = fp;
+  }
+  if (ts.filter_path_mem[filter_mode][memory_idx] > 0){
+    const char *filter_names[2];
+    AudioFilter_GetNamesOfFilterPath(ts.filter_path_mem[filter_mode][memory_idx],filter_names);
+    sprintf(options, "   %s/%s", filter_names[0],filter_names[1]);
+  } else {
+    sprintf(options, "      UNUSED");
+  }
+  return tchange;
+}
+
+
 void __attribute__ ((noinline)) UiMenu_MapColors(uint32_t color ,char* options,volatile uint32_t* clr_ptr) {
 	char* clr_str;
 	switch(color) {
@@ -363,9 +391,10 @@ const MenuDescriptor topGroup[] = {
 
 const MenuDescriptor baseGroup[] = {
     { MENU_BASE, MENU_ITEM, MENU_DSP_NR_STRENGTH, "010","DSP NR Strength" },
-    { MENU_BASE, MENU_ITEM, MENU_SSB_NARROW_FILT,"029","CW Filt in SSB Mode"},
-    { MENU_BASE, MENU_ITEM, MENU_AM_DISABLE,"030","AM Mode"},
+//    { MENU_BASE, MENU_ITEM, MENU_SSB_NARROW_FILT,"029","CW Filt in SSB Mode"},
     { MENU_BASE, MENU_ITEM, MENU_SSB_AUTO_MODE_SELECT,"031","LSB/USB Auto Select"},
+    { MENU_BASE, MENU_ITEM, MENU_AM_DISABLE,"030","AM Mode"},
+    { MENU_BASE, MENU_ITEM, MENU_DEMOD_SAM,"SAM","SyncAM Mode"  },
     { MENU_BASE, MENU_ITEM, MENU_FM_MODE_ENABLE,"040","FM Mode"},
     { MENU_BASE, MENU_ITEM, MENU_FM_GEN_SUBAUDIBLE_TONE,"041","FM Sub Tone Gen"},
     { MENU_BASE, MENU_ITEM, MENU_FM_DET_SUBAUDIBLE_TONE,"042","FM Sub Tone Det"},
@@ -417,7 +446,7 @@ const MenuDescriptor displayGroup[] = {
 };
 
 const MenuDescriptor cwGroup[] = {
-    { MENU_CW, MENU_ITEM, MENU_CW_WIDE_FILT,"028","Wide Filt in CW Mode"},
+//    { MENU_CW, MENU_ITEM, MENU_CW_WIDE_FILT,"028","Wide Filt in CW Mode"},
     { MENU_CW, MENU_ITEM, MENU_KEYER_MODE,"070","CW Keyer Mode"},
     { MENU_CW, MENU_ITEM, MENU_KEYER_SPEED,"071","CW Keyer Speed"},
     { MENU_CW, MENU_ITEM, MENU_SIDETONE_GAIN,"072","CW Sidetone Gain"},
@@ -450,6 +479,7 @@ const MenuDescriptor confGroup[] = {
     { MENU_CONF, MENU_ITEM, CONFIG_USB_RX_IQ_GAIN_BAL,"242","USB RX IQ Bal."},
     { MENU_CONF, MENU_ITEM, CONFIG_USB_RX_IQ_PHASE_BAL,"243","USB RX IQ Phase"},
     { MENU_CONF, MENU_ITEM, CONFIG_AM_RX_GAIN_BAL,"244","AM  RX IQ Bal."},
+    { MENU_CONF, MENU_ITEM, CONFIG_AM_RX_PHASE_BAL,"244b","AM  RX IQ Phase"},
     { MENU_CONF, MENU_ITEM, CONFIG_FM_RX_GAIN_BAL,"245","FM  RX IQ Bal."},
     { MENU_CONF, MENU_ITEM, CONFIG_LSB_TX_IQ_GAIN_BAL,"250","LSB TX IQ Bal."},
     { MENU_CONF, MENU_ITEM, CONFIG_LSB_TX_IQ_PHASE_BAL,"251","LSB TX IQ Phase"},
@@ -482,8 +512,8 @@ const MenuDescriptor confGroup[] = {
     { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_DECORRELATOR_BUFFER_LENGTH,"314","DSP Notch BufLen"},
     { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_FFT_NUMTAPS,"315","DSP Notch FFTNumTap"},
     { MENU_CONF, MENU_ITEM, CONFIG_AGC_TIME_CONSTANT,"320","NB  AGC T/C (<=Slow)"},
-    { MENU_CONF, MENU_ITEM, CONFIG_AM_TX_FILTER_ENABLE,"330","AM  TX Audio Filter"},
-    { MENU_CONF, MENU_ITEM, CONFIG_SSB_TX_FILTER_ENABLE,"331","SSB TX Audio Filter"},
+    { MENU_CONF, MENU_ITEM, CONFIG_AM_TX_FILTER_DISABLE,"330","AM  TX Audio Filter"},
+    { MENU_CONF, MENU_ITEM, CONFIG_SSB_TX_FILTER_DISABLE,"331","SSB TX Audio Filter"},
     { MENU_CONF, MENU_ITEM, CONFIG_FFT_WINDOW_TYPE,"340","FFT Windowing"},
     { MENU_CONF, MENU_ITEM, CONFIG_RESET_SER_EEPROM,"341","Reset Ser EEPROM"},
     { MENU_CONF, MENU_ITEM, CONFIG_DSP_ENABLE,"530","DSP NR (EXPERIMENTAL)"},
@@ -532,7 +562,27 @@ const MenuDescriptor powGroup[] = {
 };
 
 const MenuDescriptor filterGroup[] = {
-    { MENU_FILTER, MENU_ITEM, MENU_300HZ_SEL,"500","300Hz Center Freq."  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SSB_01,"600", "SSB Filter 1"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SSB_02,"600", "SSB Filter 2"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SSB_03,"600", "SSB Filter 3"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SSB_04,"600", "SSB Filter 4"  },
+
+    { MENU_FILTER, MENU_ITEM, MENU_FP_CW_01,"600", "CW Filter 1"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_CW_02,"600", "CW Filter 2"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_CW_03,"600", "CW Filter 3"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_CW_04,"600", "CW Filter 4"  },
+
+    { MENU_FILTER, MENU_ITEM, MENU_FP_AM_01,"600", "AM Filter 1"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_AM_02,"600", "AM Filter 2"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_AM_03,"600", "AM Filter 3"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_AM_04,"600", "AM Filter 4"  },
+
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_01,"600", "SAM Filter 1"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_02,"600", "SAM Filter 2"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_03,"600", "SAM Filter 3"  },
+    { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_04,"600", "SAM Filter 4"  },
+
+/*
     { MENU_FILTER, MENU_ITEM, MENU_500HZ_SEL,"501","500Hz Center Freq."},
     { MENU_FILTER, MENU_ITEM, MENU_1K4_SEL,"502","1.4k Filter"},
     { MENU_FILTER, MENU_ITEM, MENU_1K6_SEL,"503","1.6k Filter"},
@@ -563,6 +613,7 @@ const MenuDescriptor filterGroup[] = {
     { MENU_FILTER, MENU_ITEM, MENU_9K5_SEL,"528","9.5k Filter"},
     { MENU_FILTER, MENU_ITEM, MENU_10K0_SEL,"529","10.0k Filter"},
     { MENU_FILTER, MENU_ITEM, MENU_FP_SEL,"FPA","FilterPath (exp.)"  },
+ */
     { MENU_FILTER, MENU_STOP, 0, "   " , NULL }
 };
 
@@ -1054,21 +1105,26 @@ bool UiMenu_DisplayMoveSlotsForward(int16_t change) {
 bool init_done = false;
 
 static void UiMenu_UpdateHWInfoLines(uchar index, uchar mode, int pos) {
-   char out[32];
+   char out[32], outa[10];
    const char* outs = NULL;
    uint32_t m_clr = White;
 
-
+/*
    static const char* display_types[] = {
        " ",
        "HY28A SPI Mode",
        "HY28B SPI Mode",
        "HY28A/B Para."
    };
-
+*/
    switch (index) {
    case INFO_DISPLAY:
-     outs = display_types[ts.display_type];
+   if(ts.display_type == 3)
+	sprintf(outa,"ILI%04x parallel",ts.DeviceCode);
+    else
+	sprintf(outa,"ILI%04x SPI",ts.DeviceCode);
+    outs = outa;
+//     outs = display_types[ts.display_type];
      break;
    case INFO_SI570:
    {
@@ -1232,49 +1288,6 @@ bool __attribute__ ((noinline))  UiDriverMenuBandRevCouplingAdjust(int var, uint
 }
 
 
-static void  __attribute__ ((noinline))  UiDriverMenuChangeFilter(uint8_t filter_id, bool changed) {
-	if((ts.txrx_mode == TRX_MODE_RX) && (changed))	{	// set filter if changed
-		if(ts.filter_id == filter_id)	{
-			//UiDriverProcessActiveFilterScan();	// find next active filter
-			UiDriverChangeFilter(0);
-			UiDriverDisplayFilterBW();	// update on-screen filter bandwidth indicator
-		}
-	}
-}
-
-
-static bool UiMenuHandleFilterConfig(int var, uint8_t mode, char* options, uint32_t* clr_ptr, uint8_t bwId) {
-  bool fchange = false;
-  if (bwId < AUDIO_FILTER_NUM) {
-    FilterDescriptor *filter = &FilterInfo[bwId];
-    if(ts.dmod_mode != DEMOD_FM)    {
-      fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.filter_select[bwId],
-          0,
-          filter->configs_num-1,
-          filter->config_default,
-          1
-      );
-      if(ts.filter_id != bwId) {
-        *clr_ptr = Orange;
-      }
-    }
-    else                // show disabled if in FM
-      *clr_ptr = Red;
-
-    if (ts.filter_select[bwId] == 0)    {
-      *clr_ptr = Red;
-    }
-    strcpy(options,
-        (ts.filter_select[bwId] < filter->configs_num)?
-        filter->config[ts.filter_select[bwId]].label:
-        "UNDEFINED"
-        );
-    UiDriverMenuChangeFilter(bwId,fchange);
-  }
-  return fchange;
-}
-
-
 //
 //
 //*----------------------------------------------------------------------------
@@ -1338,52 +1351,17 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 		//
 		sprintf(options, "  %u", ts.dsp_nr_strength);
 		break;
-	//
-	case MENU_300HZ_SEL:	// 300 Hz filter select
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_300HZ);
-		break;
-	case MENU_500HZ_SEL:	// 500 Hz filter select
-	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_500HZ);
-	  break;
-	case MENU_1K8_SEL:	// 1.8 kHz filter select
-	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P8KHZ);
-	  break;
-
-	case MENU_2K3_SEL: // 2.3 kHz filter select
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P3KHZ);
-		break;
-	case MENU_2K7_SEL: // 2.7 kHz filter select
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P7KHZ);
-		break;
-	case MENU_3K6_SEL: // 3.6 kHz filter select
-	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P6KHZ);
-		break;
-	case MENU_4K4_SEL:	//
-	  UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P4KHZ);
-	  break;
-	case MENU_6K0_SEL:	//
-      UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_6P0KHZ);
-	  break;
-
-	case MENU_CW_WIDE_FILT: // CW mode wide filter enable/disable
-		UiDriverMenuItemChangeDisableOnOff(var, mode, &ts.filter_cw_wide_disable,0,options,&clr);
-
-		if((ts.filter_id != DEMOD_CW))	// make orange if NOT in "Wide" mode
-			clr = Orange;
-		break;
-	//
-	case MENU_SSB_NARROW_FILT: // SSW mode narrow filter enable/disable
-		UiDriverMenuItemChangeDisableOnOff(var, mode, &ts.filter_ssb_narrow_disable,0,options,&clr);
-
-		if((ts.filter_id != DEMOD_CW))	// make orange if NOT in "Wide" mode
-					clr = Orange;
-
-		break;
 		//
 	case MENU_AM_DISABLE: // AM mode enable/disable
 		UiDriverMenuItemChangeDisableOnOff(var, mode, &ts.am_mode_disable,0,options,&clr);
 		break;
 		//
+	case MENU_DEMOD_SAM:	// Enable demodulation mode SAM
+		temp_var = ts.sam_enabled;
+		fchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
+		if(fchange)
+		    ts.sam_enabled = temp_var;
+		break;
 	case MENU_SSB_AUTO_MODE_SELECT:		// Enable/Disable auto LSB/USB select
 		fchange = UiDriverMenuItemChangeUInt8(var, mode, &ts.lsb_usb_auto_select,
 				0,
@@ -1401,13 +1379,13 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 	//
 	case MENU_FM_MODE_ENABLE:	// Enable/Disable FM
 		if(ts.iq_freq_mode)	{
-			temp_var = ts.misc_flags2 & 1;
+			temp_var = ts.misc_flags2 & MISC_FLAGS2_FM_MODE_ENABLE;
 			fchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 			if(fchange)	{
 				if(temp_var)	// band up/down swap is to be enabled
-					ts.misc_flags2 |= 1;		// FM is enabled
+					ts.misc_flags2 |= MISC_FLAGS2_FM_MODE_ENABLE;		// FM is enabled
 				else			// band up/down swap is to be disabled
-					ts.misc_flags2 &= 0xfe;		// FM is disabled
+					ts.misc_flags2 &= ~MISC_FLAGS2_FM_MODE_ENABLE;		// FM is disabled
 			}
 
 		}
@@ -1525,7 +1503,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 		//
 		if(fchange)	{			// was the bandwidth changed?
 			AudioFilter_CalcRxPhaseAdj();			// yes - update the filters!
-			UiDriverChangeFilter(1);	// update display of filter bandwidth (numerical) on screen only
+			UiDriverChangeFilterDisplay();	// update display of filter bandwidth (numerical) on screen only
 		}
 		//
 		if(ts.dmod_mode != DEMOD_FM)	// make orange if we are NOT in FM
@@ -1534,16 +1512,16 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 	//
 	case MENU_FM_DEV_MODE:	// Select +/- 2.5 or 5 kHz deviation on RX and TX
 		if(ts.iq_freq_mode)	{
-			temp_var = ts.misc_flags2 & 2;
+			temp_var = ts.misc_flags2 & MISC_FLAGS2_FM_MODE_DEVIATION_5KHZ;
 			fchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 			if(fchange)	{
 				if(temp_var)	// band up/down swap is to be enabled
-					ts.misc_flags2 |= 2;		// set 5 kHz mode
+					ts.misc_flags2 |= MISC_FLAGS2_FM_MODE_DEVIATION_5KHZ;		// set 5 kHz mode
 				else			// band up/down swap is to be disabled
-					ts.misc_flags2 &= 0xfd;		// set 2.5 kHz mode
+					ts.misc_flags2 &= ~MISC_FLAGS2_FM_MODE_DEVIATION_5KHZ;		// set 2.5 kHz mode
 			}
 			//
-			if(ts.misc_flags2 & 2)				// Check state of bit indication 2.5/5 kHz
+			if(ts.misc_flags2 & MISC_FLAGS2_FM_MODE_DEVIATION_5KHZ)				// Check state of bit indication 2.5/5 kHz
 				strcpy(options, "+-5k (Wide)");		// Bit is set - 5 kHz
 			else
 				strcpy(options, "+-2k5 (Nar)");		// Not set - 2.5 kHz
@@ -1754,7 +1732,7 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 							1
 							);
 		}
-		if((ts.txrx_mode == TRX_MODE_TX) && (fchange))	{		// only adjust the hardware if in TX mode (it will kill RX otherwise!)
+		if(fchange)	{
 			Codec_MicBoostCheck();
 		}
 		//
@@ -2194,15 +2172,15 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 						break;
 			//
 		case MENU_SCOPE_MODE:
-			temp_sel = (ts.misc_flags1 & 0x80)?1:0;
+			temp_sel = (ts.misc_flags1 & MISC_FLAGS1_WFALL_SCOPE_TOGGLE)?1:0;
 
 			UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_sel,0,options,&clr);
 
-			if (temp_sel) { ts.misc_flags1 |= 0x80; }
-			else { ts.misc_flags1 &= ~0x80 ; }
+			if (temp_sel) { ts.misc_flags1 |= MISC_FLAGS1_WFALL_SCOPE_TOGGLE; }
+			else { ts.misc_flags1 &= ~MISC_FLAGS1_WFALL_SCOPE_TOGGLE ; }
 
 
-			if(ts.misc_flags1 & 0x80)				// is waterfall mode active?
+			if(ts.misc_flags1 & MISC_FLAGS1_WFALL_SCOPE_TOGGLE)				// is waterfall mode active?
 				strcpy(options, "WFALL");		// yes - indicate waterfall mode
 			else
 				strcpy(options, "SCOPE");		// no, scope mode
@@ -2460,41 +2438,43 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		}
 		break;
 	case CONFIG_BAND_BUTTON_SWAP:	// Swap position of Band+ and Band- buttons
-		temp_var = ts.misc_flags1 & 2;
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_SWAP_BAND_BTN;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)	{
 			if(temp_var)	// band up/down swap is to be enabled
-				ts.misc_flags1 |= 2;		// set LSB
+				ts.misc_flags1 |= MISC_FLAGS1_SWAP_BAND_BTN;		// set LSB
 			else			// band up/down swap is to be disabled
-				ts.misc_flags1 &= 0xfd;		// clear LSB
+				ts.misc_flags1 &= ~MISC_FLAGS1_SWAP_BAND_BTN;		// clear LSB
 		}
 		break;
 	case CONFIG_TX_DISABLE:	// Step size button swap on/off
 		temp_var = ts.tx_disable & 1;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange) {
-		  UiDriverFButtonLabel(5,"  TUNE",temp_var?Grey1:White);
+		  // FIXME: Call "abstract" function to update status of tune,
+		  // do not redraw menu button here directly
+		  UiDriverFButtonLabel(5,"TUNE",temp_var?Grey1:White);
 		  ts.tx_disable = temp_var;
 		}
 		break;
 	case CONFIG_AUDIO_MAIN_SCREEN_MENU_SWITCH:	// AFG/(STG/CMP) and RIT/(WPM/MIC/LIN) are to change automatically with TX/RX
-		temp_var = ts.misc_flags1 & 1;
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_TX_AUTOSWITCH_UI;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)	{
 			if(temp_var)	// change-on-tx is to be disabled
-				ts.misc_flags1 |= 1;		// set LSB
+				ts.misc_flags1 |= MISC_FLAGS1_TX_AUTOSWITCH_UI;		// set LSB
 			else			// change-on-tx is to be enabled
-				ts.misc_flags1 &= 0xfe;		// clear LSB
+				ts.misc_flags1 &= ~MISC_FLAGS1_TX_AUTOSWITCH_UI;		// clear LSB
 		}
 		break;
 	case CONFIG_MUTE_LINE_OUT_TX:	// Enable/disable MUTE of TX audio on LINE OUT
-		temp_var = ts.misc_flags1 & 4;
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_MUTE_LINEOUT_TX;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if((tchange) && (!ts.iq_freq_mode))		{	// did the status change and is translate mode NOT active?
 			if(temp_var)	// Yes - MUTE of TX audio on LINE OUT is enabled
-				ts.misc_flags1 |= 4;		// set LSB
+				ts.misc_flags1 |= MISC_FLAGS1_MUTE_LINEOUT_TX;		// set LSB
 			else			// MUTE of TX audio on LINE OUT is disabled
-				ts.misc_flags1 &= 0xfb;		// clear LSB
+				ts.misc_flags1 &= ~MISC_FLAGS1_MUTE_LINEOUT_TX;		// clear LSB
 		}
 		if(ts.iq_freq_mode)	// Mark RED if translate mode is active
 			clr = Red;
@@ -2583,18 +2563,18 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		sprintf(options, "    %u", ts.max_rf_gain);
 		break;
 	case CONFIG_BEEP_ENABLE:	//
-		temp_var = ts.misc_flags2 & 4;
+		temp_var = ts.misc_flags2 & MISC_FLAGS2_KEY_BEEP_ENABLE;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)	{
 			if(temp_var)	// beep is to be enabled
-				ts.misc_flags2 |= 4;		// set LSB+2
+				ts.misc_flags2 |= MISC_FLAGS2_KEY_BEEP_ENABLE;		// set LSB+2
 			else			// beep is to be disabled
-				ts.misc_flags2 &= 0xfb;		// clear LSB+2
+				ts.misc_flags2 &= ~MISC_FLAGS2_KEY_BEEP_ENABLE;		// clear LSB+2
 			UiMenu_RenderMenu(MENU_RENDER_ONLY);
 		}
 		break;
 	case CONFIG_BEEP_FREQ:		// Beep frequency
-		if(ts.misc_flags2 & 4)	{	// is beep enabled?
+		if(ts.misc_flags2 & MISC_FLAGS2_KEY_BEEP_ENABLE)	{	// is beep enabled?
 			tchange = UiDriverMenuItemChangeUInt32(var, mode, &ts.beep_frequency,
 								MIN_BEEP_FREQUENCY,
 								MAX_BEEP_FREQUENCY,
@@ -2669,28 +2649,28 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		break;
 		//
 	case CONFIG_FREQ_LIMIT_RELAX:	// Enable/disable Frequency tuning limits
-		temp_var = ts.misc_flags1 & 32;
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_FREQ_LIMIT_RELAX;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)		{	// did the status change and is translate mode NOT active?
 			if(temp_var)	// tuning limit is disabled
-				ts.misc_flags1 |= 32;		// set bit
+				ts.misc_flags1 |= MISC_FLAGS1_FREQ_LIMIT_RELAX;		// set bit
 			else			// tuning limit is enabled
-				ts.misc_flags1 &= 0xdf;		// clear bit
+				ts.misc_flags1 &= ~MISC_FLAGS1_FREQ_LIMIT_RELAX;		// clear bit
 		}
-		if(ts.misc_flags1 & 32)	{			// tuning limit is disabled
+		if(ts.misc_flags1 & MISC_FLAGS1_FREQ_LIMIT_RELAX)	{			// tuning limit is disabled
 			clr = Orange;					// warn user!
 		}
 		break;
 	case CONFIG_FREQ_MEM_LIMIT_RELAX:	// Enable/disable Frequency memory limits
-		temp_var = ts.misc_flags2 & 16;
+		temp_var = ts.misc_flags2 & MISC_FLAGS2_FREQ_MEM_LIMIT_RELAX;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)		{	// did the status change?
 			if(temp_var)	// freq/mem limit is disabled
-				ts.misc_flags2 |= 16;		// set bit
+				ts.misc_flags2 |= MISC_FLAGS2_FREQ_MEM_LIMIT_RELAX;		// set bit
 			else			// freq/mem limit is enabled
-				ts.misc_flags2 &= 0xef;		// clear bit
+				ts.misc_flags2 &= ~MISC_FLAGS2_FREQ_MEM_LIMIT_RELAX;		// clear bit
 		}
-		if(ts.misc_flags2 & 16)	{			// frequency/memory limit is disabled
+		if(ts.misc_flags2 & MISC_FLAGS2_FREQ_MEM_LIMIT_RELAX)	{			// frequency/memory limit is disabled
 			clr = Orange;					// warn user!
 		}
 		break;
@@ -2715,10 +2695,10 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 								MAX_RX_IQ_PHASE_BALANCE,
 								0,
 								1);
-			if(tchange)
+			if(tchange && !ts.USE_NEW_PHASE_CORRECTION)
 				AudioFilter_CalcRxPhaseAdj();
 		}
-		else		// Orange if not in RX and/or correct mode
+			else		// Orange if not in RX and/or correct mode
 			clr = Orange;
 		sprintf(options, "   %d", ts.rx_iq_lsb_phase_balance);
 		break;
@@ -2742,8 +2722,9 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 											MIN_RX_IQ_PHASE_BALANCE,
 											MAX_RX_IQ_PHASE_BALANCE,
 											0,
-											1);if(tchange)
-				AudioFilter_CalcRxPhaseAdj();
+											1);
+			if(tchange && !ts.USE_NEW_PHASE_CORRECTION)
+					AudioFilter_CalcRxPhaseAdj();
 		}
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
@@ -2762,6 +2743,18 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		else		// Orange if not in RX and/or correct mode
 			clr = Orange;
 		sprintf(options, "   %d", ts.rx_iq_am_gain_balance);
+		break;
+	case 	CONFIG_AM_RX_PHASE_BAL:		// AM RX IQ Phase balance
+		if((ts.dmod_mode == DEMOD_AM)  && (ts.txrx_mode == TRX_MODE_RX))	{
+			tchange = UiDriverMenuItemChangeInt(var, mode, &ts.rx_iq_am_phase_balance,
+											MIN_RX_IQ_PHASE_BALANCE,
+											MAX_RX_IQ_PHASE_BALANCE,
+											0,
+											1);
+		}
+		else		// Orange if not in RX and/or correct mode
+			clr = Orange;
+		sprintf(options, "   %d", ts.rx_iq_am_phase_balance);
 		break;
 	case 	CONFIG_FM_RX_GAIN_BAL:		// FM RX IQ Phase balance
 		if((ts.dmod_mode == DEMOD_FM)  && (ts.txrx_mode == TRX_MODE_RX))	{
@@ -2797,7 +2790,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 					MAX_TX_IQ_PHASE_BALANCE,
 					0,
 					1);
-			if(tchange)
+			if(tchange && !ts.USE_NEW_PHASE_CORRECTION)
 				AudioFilter_CalcTxPhaseAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
@@ -2825,7 +2818,7 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 					MAX_TX_IQ_PHASE_BALANCE,
 					0,
 					1);
-			if(tchange)
+			if(tchange && !ts.USE_NEW_PHASE_CORRECTION)
 				AudioFilter_CalcTxPhaseAdj();
 		}
 		else		// Orange if not in TX and/or correct mode
@@ -2971,15 +2964,15 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_23, &swrm.coupling_23cm_calc, options, &clr);
 		break;
 	case CONFIG_FWD_REV_SENSE_SWAP:	// Enable/disable swap of FWD/REV A/D inputs on power sensor
-		temp_var = ts.misc_flags1 & 16;
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_SWAP_FWDREV_SENSE;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)		{	// did the status change and is translate mode NOT active?
 			if(temp_var)	// swapping of FWD/REV is enabled
-				ts.misc_flags1 |= 16;		// set bit
+				ts.misc_flags1 |= MISC_FLAGS1_SWAP_FWDREV_SENSE;		// set bit
 			else			// swapping of FWD/REV bit is disabled
-				ts.misc_flags1 &= 0xef;		// clear bit
+				ts.misc_flags1 &= ~MISC_FLAGS1_SWAP_FWDREV_SENSE;		// clear bit
 		}
-		if(ts.misc_flags1 & 16)	{			// Display status FWD/REV swapping
+		if(ts.misc_flags1 & MISC_FLAGS1_SWAP_FWDREV_SENSE)	{			// Display status FWD/REV swapping
 			clr = Orange;					// warn user swapping is on!
 		}
 		break;
@@ -3155,13 +3148,13 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		UiDriverMenuBandPowerAdjust(var, mode, BAND_MODE_23, PA_LEVEL_FULL, options, &clr);
 		break;
 	case CONFIG_REDUCE_POWER_ON_LOW_BANDS:	// Step size button swap on/off
-		temp_var = ts.misc_flags2 & 8;
+		temp_var = ts.misc_flags2 & MISC_FLAGS2_LOW_BAND_BIAS_REDUCE;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange) {
 		    if(temp_var)
-			ts.misc_flags2 |= 8;
+			ts.misc_flags2 |= MISC_FLAGS2_LOW_BAND_BIAS_REDUCE;
 		    else
-			ts.misc_flags2 &= 0xf7;
+			ts.misc_flags2 &= ~MISC_FLAGS2_LOW_BAND_BIAS_REDUCE;
 		}
 		break;
 	case CONFIG_DSP_NR_DECORRELATOR_BUFFER_LENGTH:		// Adjustment of DSP noise reduction de-correlation delay buffer length
@@ -3284,29 +3277,29 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		//
 		sprintf(options, "  %u", ts.nb_agc_time_const);
 		break;
-	case CONFIG_AM_TX_FILTER_ENABLE:	// Enable/disable AM TX audio filter
-		temp_var = ts.misc_flags1 & 8;
-		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
+	case CONFIG_AM_TX_FILTER_DISABLE:	// Enable/disable AM TX audio filter
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_AM_TX_FILTER_DISABLE;
+		tchange = UiDriverMenuItemChangeDisableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)		{	// did the status change and is translate mode NOT active?
 			if(temp_var)	// AM TX audio filter is disabled
-				ts.misc_flags1 |= 8;		// set LSB
+				ts.misc_flags1 |= MISC_FLAGS1_AM_TX_FILTER_DISABLE;		// set LSB
 			else			// AM TX audio filter is enabled
-				ts.misc_flags1 &= 0xf7;		// clear LSB
+				ts.misc_flags1 &= ~MISC_FLAGS1_AM_TX_FILTER_DISABLE;		// clear LSB
 		}
-		if(ts.misc_flags1 & 8)	{			// Display status of TX audio filter
+		if(ts.misc_flags1 & MISC_FLAGS1_AM_TX_FILTER_DISABLE)	{			// Display status of TX audio filter
 			clr = Orange;					// warn user that filter is off!
 		}
 		break;
-	case CONFIG_SSB_TX_FILTER_ENABLE:	// Enable/disable SSB TX audio filter
-		temp_var = ts.misc_flags1 & 64;
-		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
+	case CONFIG_SSB_TX_FILTER_DISABLE:	// Enable/disable SSB TX audio filter
+		temp_var = ts.misc_flags1 & MISC_FLAGS1_SSB_TX_FILTER_DISABLE;
+		tchange = UiDriverMenuItemChangeDisableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)		{	// did the status change and is translate mode NOT active?
 			if(temp_var)	// SSB TX audio filter is disabled
-				ts.misc_flags1 |= 64;		// set bit
+				ts.misc_flags1 |= MISC_FLAGS1_SSB_TX_FILTER_DISABLE;		// set bit
 			else			// SSB TX audio filter is enabled
-				ts.misc_flags1 &= 0xbf;		// clear bit
+				ts.misc_flags1 &= ~MISC_FLAGS1_SSB_TX_FILTER_DISABLE;		// clear bit
 		}
-		if(ts.misc_flags1 & 64)	{			// Display status of TX audio filter
+		if(ts.misc_flags1 & MISC_FLAGS1_SSB_TX_FILTER_DISABLE)	{			// Display status of TX audio filter
 			clr = Red;					// warn user that filter is off!
 		}
 		break;
@@ -3394,90 +3387,32 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 			}
 		}
 		break;
-	case MENU_1K4_SEL: //
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P4KHZ);
-		break;
-	case MENU_1K6_SEL: //
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_1P6KHZ);
-		break;
-	case MENU_2K1_SEL: //
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P1KHZ);
-		break;
-	case MENU_2K5_SEL: //
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P5KHZ);
-		break;
-	case MENU_2K9_SEL: // 2.9 kHz filter select
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_2P9KHZ);
-		break;
-	case MENU_3K2_SEL: //
-      UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P2KHZ);
-		break;
-	case MENU_3K4_SEL: //
-        UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P4KHZ);
-		break;
-	case MENU_3K8_SEL: //
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_3P8KHZ);
-		break;
-	case MENU_4K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P0KHZ);
-		break;
-	case MENU_4K2_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P2KHZ);
-		break;
-	case MENU_4K6_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P6KHZ);
-		break;
-	case MENU_4K8_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_4P8KHZ);
-		break;
-	case MENU_5K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_5P0KHZ);
-		break;
-	case MENU_5K5_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_5P5KHZ);
-		break;
-	case MENU_6K5_SEL:	//
-        UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_6P5KHZ);
-		break;
-	case MENU_7K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_7P0KHZ);
-		break;
-	case MENU_7K5_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_7P5KHZ);
-		break;
-	case MENU_8K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_8P0KHZ);
-		break;
-	case MENU_8K5_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_8P5KHZ);
-		break;
-	case MENU_9K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_9P0KHZ);
-		break;
-	case MENU_9K5_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_9P5KHZ);
-		break;
-	case MENU_10K0_SEL:	//
-	    UiMenuHandleFilterConfig(var,mode,options,&clr,AUDIO_10P0KHZ);
-		break;
-    case MENU_FP_SEL: // FIXME: Remove after FilterPaths become officially used
-        temp_var = ts.filter_path;
-        tchange = UiDriverMenuItemChangeUInt8(var, mode, &temp_var,
-            0,
-            86,
-            0,
-            1);
-        ts.filter_path = temp_var;
-        if(tchange) {   // did something change?
-          // avoid FM filter paths for now
-          if (ts.filter_path == 1 || ts.filter_path == 2) { ts.filter_path = 4; }
-          if (ts.filter_path == 3) { ts.filter_path = 0; }
-          UiDriverChangeFilter(0);
-        }
-        sprintf(options, "  %u", ts.filter_path);
-        break;
+	case    MENU_FP_CW_01:
+	case    MENU_FP_CW_02:
+	case    MENU_FP_CW_03:
+	case    MENU_FP_CW_04:
+      UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_CW,(select - MENU_FP_CW_01)+1);
+      break;
+	case    MENU_FP_AM_01:
+	case    MENU_FP_AM_02:
+	case    MENU_FP_AM_03:
+	case    MENU_FP_AM_04:
+	  UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_AM,(select - MENU_FP_AM_01)+1);
+	  break;
+	case    MENU_FP_SSB_01:
+	case    MENU_FP_SSB_02:
+	case    MENU_FP_SSB_03:
+	case    MENU_FP_SSB_04:
+	UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_SSB,(select - MENU_FP_SSB_01)+1);
+    break;
 
-	case CONFIG_DSP_ENABLE:	// Enable DSP NR
+    case    MENU_FP_SAM_01:
+    case    MENU_FP_SAM_02:
+    case    MENU_FP_SAM_03:
+    case    MENU_FP_SAM_04:
+    UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_SAM,(select - MENU_FP_SAM_01)+1);
+    break;
+    case CONFIG_DSP_ENABLE:	// Enable DSP NR
 		temp_var = ts.dsp_enabled;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)

@@ -1,5 +1,5 @@
 
-SRCS=main.c command.c flash_if.c stm32f4xx_it.c system_stm32f4xx.c usb_bsp.c usbh_usr.c
+SRCS=main.c command.c flash_if.c bootloader_it.c system_bootloader.c usb_bsp.c usbh_usr.c
 
 # Library modules
 SRCS += stm32f4xx_exti.c stm32f4xx_flash.c stm32f4xx_gpio.c stm32f4xx_rcc.c 
@@ -20,7 +20,7 @@ STM_COMMON=../
 CC=arm-none-eabi-gcc
 OBJCOPY=arm-none-eabi-objcopy
 
-CFLAGS  = -Os -flto -ffunction-sections -fdata-sections -Wall -Tstm32_flash.ld -Wl,--gc-sections -Wl,--strip-all
+CFLAGS  = -Os -flto -ffunction-sections -fdata-sections -Wall -Tbootloader.ld -Wl,--gc-sections -Wl,--strip-all
 CFLAGS += -DUSE_STDPERIPH_DRIVER
 CFLAGS += -mlittle-endian -mthumb -mcpu=cortex-m4 -mthumb-interwork
 CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
@@ -37,18 +37,25 @@ CFLAGS += -I$(STM_COMMON)/../cmsis_lib/include
 CFLAGS += -I$(STM_COMMON)/Libraries/stm32_usb_host_library/Core/inc
 CFLAGS += -I$(STM_COMMON)/Libraries/stm32_usb_host_library/Class/MSC/inc
 CFLAGS += -I$(STM_COMMON)/Libraries/stm32_usb_otg_driver/inc
+#CFLAGS += -I$(STM_COMMON)/../usb/otg/inc
+#CFLAGS += -I$(STM_COMMON)/../usb/usbh/core/inc
+#CFLAGS += -I$(STM_COMMON)/../usb/usbh/class/MSC/inc
 
 
 # add startup file to build
-SRCS += startup_stm32f4xx.s 
+SRCS += startup_bootloader.s 
 
 OBJS = $(SRCS:.c=.o)
+
 
 vpath %.c $(STM_COMMON)/../cmsis_lib/source \
           $(STM_COMMON)/Libraries/stm32_usb_otg_driver/src \
           $(STM_COMMON)/Libraries/stm32_usb_host_library/Core/src \
           $(STM_COMMON)/Libraries/stm32_usb_host_library/Class/MSC/src \
           $(STM_COMMON)/../drivers/fat_fs/src
+#          $(STM_COMMON)/../usb/otg/src \
+#          $(STM_COMMON)/../usb/usbh/core/src \
+#          $(STM_COMMON)/../usb/usbh/class/MSC/src \
 
 .PHONY: proj
 
