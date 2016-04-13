@@ -13,7 +13,7 @@
 #########################################################################
 
 
-2016mmdd [DF8OE]
+20160413 [DF8OE]
 - again bugfix "white screen issue" on some left LCDs
 - bugfix loading defaults
 - signal line in spectrum now always is in front of spectrum
