@@ -203,6 +203,21 @@ enum	{
 //
 #define	SD_DB_DIV_SCALING			0.0316	// Scaling factor for number of dB/Division	0.0316 = 10dB/Division
 
+enum {
+  COUPLING_2200M = 0,
+  COUPLING_630M,
+  COUPLING_160M,
+  COUPLING_80M,
+  COUPLING_40M,
+  COUPLING_20M,
+  COUPLING_15M,
+  COUPLING_6M,
+  COUPLING_2M,
+  COUPLING_70CM,
+  COUPLING_23CM,
+  COUPLING_MAX
+ };
+
 // SWR and RF power meter public
 typedef struct SWRMeter
 {
@@ -220,17 +235,8 @@ typedef struct SWRMeter
 	bool  pwr_meter_was_disp;	// TRUE if numerical FWD/REV power metering WAS displayed (used to clear it)
 	uchar	p_curr;			// count used to update power meter
 	uchar	sensor_null;		// used to null out the sensor offset voltage
-	uchar	coupling_2200m_calc;	// coupling coefficient for forward and reverse couplers for 2200 meters
-	uchar	coupling_630m_calc;	// coupling coefficient for forward and reverse couplers for 630 meters
-	uchar	coupling_160m_calc;	// coupling coefficient for forward and reverse couplers for 160 meters
-	uchar	coupling_80m_calc;	// coupling coefficient for forward and reverse couplers for 80 meters
-	uchar	coupling_40m_calc;	// coupling coefficient for forward and reverse couplers for 40/60 meters
-	uchar	coupling_20m_calc;	// coupling coefficient for forward and reverse couplers for 30/20 meters
-	uchar	coupling_15m_calc;	// coupling coefficient for forward and reverse couplers for 17/15/12/10 meters
-	uchar	coupling_6m_calc;	// coupling coefficient for forward and reverse couplers for 6 meters
-	uchar	coupling_2m_calc;	// coupling coefficient for forward and reverse couplers for 2 meters
-	uchar	coupling_70cm_calc;	// coupling coefficient for forward and reverse couplers for 70 centimeters
-	uchar	coupling_23cm_calc;	// coupling coefficient for forward and reverse couplers for 23 centimeters
+
+	uint8_t coupling_calc[COUPLING_MAX];
 
 } SWRMeter;
 
@@ -241,19 +247,6 @@ typedef struct SWRMeter
 #define	SENSOR_NULL_MIN				75
 #define	SENSOR_NULL_MAX				125
 #define	SENSOR_NULL_DEFAULT			100
-//
-#define	FILTER_BAND_2200			11
-#define	FILTER_BAND_630				12
-#define	FILTER_BAND_160				5
-#define	FILTER_BAND_80				1
-#define	FILTER_BAND_40				2
-#define	FILTER_BAND_20				3
-#define FILTER_BAND_15				4
-#define	FILTER_BAND_6				6
-#define	FILTER_BAND_4				7
-#define	FILTER_BAND_2				8
-#define	FILTER_BAND_70				9
-#define	FILTER_BAND_23				10
 //
 // Location of numerical FWD/REV power indicator
 //
@@ -526,7 +519,6 @@ void 	UiSpectrumCreateDrawArea(void);
 void 	UiDriverUpdateFrequencyFast(void);
 void 	UiDriverSetBandPowerFactor(uchar band);
 void 	UiDrawSpectrumScopeFrequencyBarText(void);
-void 	UiCheckForEEPROMLoadDefaultRequest(void);
 //
 //void 	UiDriverChangeFilter(uchar ui_only_update);
 void 	UiDriverSetBandPowerFactor(uchar band);
@@ -552,13 +544,11 @@ void	UiDriverShowDebugText(char*);
 void 	UiDriverChangeTuningStep(uchar is_up);
 //
 void 	uiCodecMute(uchar val);
-//
-uint16_t 	UiConfiguration_SaveEepromValues(void);
-void	UiCheckForEEPROMLoadFreqModeDefaultRequest(void);
-void	UiDriver_KeyTestScreen(void);
-void	UiInitRxParms(void);
-//
-//
+
+void	UiInitRxParms();
+
+void    UiDriver_KeyTestScreen();
+
 bool	check_tp_coordinates(uint8_t,uint8_t,uint8_t,uint8_t);
 
 void UiDriverSetDemodMode(uint32_t new_mode); // switch to different demodulation mode.
@@ -578,28 +568,6 @@ void UiDriverSetDemodMode(uint32_t new_mode); // switch to different demodulatio
 //
 #define	TX_PTT_AUDIO_MUTE_DELAY_MAX		25			// Maximum delay, in 100ths of a second, that audio will be muted after PTT (key-up) to prevent "clicks" and "clunks"
 //
-// Button definitions
-//
-enum {
-BUTTON_M2_PRESSED = 0,	// 0
-BUTTON_G3_PRESSED,	// 1
-BUTTON_G2_PRESSED,	// 2
-BUTTON_BNDM_PRESSED,	// 3
-BUTTON_G4_PRESSED,	// 4
-BUTTON_M3_PRESSED,	// 5
-BUTTON_STEPM_PRESSED,	// 6
-BUTTON_STEPP_PRESSED,	// 7
-BUTTON_M1_PRESSED,	// 8
-BUTTON_F3_PRESSED,	// 9 - Press and release handled in UiDriverProcessFunctionKeyClick()
-BUTTON_F1_PRESSED,	// 10 - Press and release handled in UiDriverProcessFunctionKeyClick()
-BUTTON_F2_PRESSED,	// 11 - Press and release handled in UiDriverProcessFunctionKeyClick()
-BUTTON_F4_PRESSED,	// 12 - Press and release handled in UiDriverProcessFunctionKeyClick()
-BUTTON_BNDP_PRESSED,	// 13
-BUTTON_F5_PRESSED,	// 14 - Press and release handled in UiDriverProcessFunctionKeyClick()
-BUTTON_G1_PRESSED,	// 15
-BUTTON_POWER_PRESSED,	// 16 - Used for press and release
-TOUCHSCREEN_ACTIVE	// 17 - Touchscreen touched
-};
 //
 // UI Driver State machine definitions
 enum {

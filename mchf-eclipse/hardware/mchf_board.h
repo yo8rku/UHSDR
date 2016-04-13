@@ -47,7 +47,7 @@
 #define 	TRX4M_VER_MINOR			219
 #define 	TRX4M_VER_RELEASE		27
 //
-#define 	TRX4M_VER_BUILD			9
+#define 	TRX4M_VER_BUILD			11
 //
 
 #define		ATTRIB_STRING1			"Additional Contributions by"
@@ -417,6 +417,33 @@ typedef struct ButtonMap
 	ushort			button;
 
 } ButtonMap;
+
+// Button definitions
+//
+enum {
+BUTTON_M2_PRESSED = 0,  // 0
+BUTTON_G3_PRESSED,  // 1
+BUTTON_G2_PRESSED,  // 2
+BUTTON_BNDM_PRESSED,    // 3
+BUTTON_G4_PRESSED,  // 4
+BUTTON_M3_PRESSED,  // 5
+BUTTON_STEPM_PRESSED,   // 6
+BUTTON_STEPP_PRESSED,   // 7
+BUTTON_M1_PRESSED,  // 8
+BUTTON_F3_PRESSED,  // 9 - Press and release handled in UiDriverProcessFunctionKeyClick()
+BUTTON_F1_PRESSED,  // 10 - Press and release handled in UiDriverProcessFunctionKeyClick()
+BUTTON_F2_PRESSED,  // 11 - Press and release handled in UiDriverProcessFunctionKeyClick()
+BUTTON_F4_PRESSED,  // 12 - Press and release handled in UiDriverProcessFunctionKeyClick()
+BUTTON_BNDP_PRESSED,    // 13
+BUTTON_F5_PRESSED,  // 14 - Press and release handled in UiDriverProcessFunctionKeyClick()
+BUTTON_G1_PRESSED,  // 15
+BUTTON_POWER_PRESSED,   // 16 - Used for press and release
+TOUCHSCREEN_ACTIVE, // 17 - Touchscreen touched, needs to last entry before BUTTON_NUM,
+                    //      init code relies on this
+BUTTON_NUM // How many buttons we have defined
+};
+
+extern const ButtonMap  bm[BUTTON_NUM];
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -1047,7 +1074,8 @@ typedef struct TransceiverState
 	uchar	multi;					// actual translate factor
 	uchar	tune_power_level;			// TX power in antenna tuning function
 	uchar	power_temp;				// temporary tx power if tune is different from actual tx power
-	bool	dsp_enabled;				// NR disabled
+	bool	cat_in_sandbox;				// CAT tuning in sandbox
+	uchar	cat_band_index;				// buffered bandindex before first CAT command arrived
 	bool	sam_enabled;				// demodulation mode SAM enabled
 	uchar	xlat;					// CAT <> IQ-Audio
 	bool	dynamic_tuning_active;			// dynamic tuning active by estimating the encoder speed
@@ -1058,6 +1086,7 @@ typedef struct TransceiverState
 	unsigned short DeviceCode;			// LCD ident code
 	bool USE_NEW_PHASE_CORRECTION; // used to test new phase correction
 	bool encoder3state;
+	uchar c_line;			// position of center line
 } TransceiverState;
 //
 extern __IO TransceiverState ts;

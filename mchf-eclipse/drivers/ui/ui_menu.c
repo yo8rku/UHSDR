@@ -279,8 +279,6 @@ void __attribute__ ((noinline)) UiDriverMenuMapStrings(char* output, uint32_t va
     strcpy(output,(value <= string_max)?strings[value]:"UNDEFINED");
 }
 
-char blankline[33] = "                                ";
-
 // menu entry kind constants
 enum MENU_KIND {
   MENU_STOP = 0, // last entry in a menu / group
@@ -512,11 +510,9 @@ const MenuDescriptor confGroup[] = {
     { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_DECORRELATOR_BUFFER_LENGTH,"314","DSP Notch BufLen"},
     { MENU_CONF, MENU_ITEM, CONFIG_DSP_NOTCH_FFT_NUMTAPS,"315","DSP Notch FFTNumTap"},
     { MENU_CONF, MENU_ITEM, CONFIG_AGC_TIME_CONSTANT,"320","NB  AGC T/C (<=Slow)"},
-    { MENU_CONF, MENU_ITEM, CONFIG_AM_TX_FILTER_DISABLE,"330","AM  TX Audio Filter"},
-    { MENU_CONF, MENU_ITEM, CONFIG_SSB_TX_FILTER_DISABLE,"331","SSB TX Audio Filter"},
     { MENU_CONF, MENU_ITEM, CONFIG_FFT_WINDOW_TYPE,"340","FFT Windowing"},
     { MENU_CONF, MENU_ITEM, CONFIG_RESET_SER_EEPROM,"341","Reset Ser EEPROM"},
-    { MENU_CONF, MENU_ITEM, CONFIG_DSP_ENABLE,"530","DSP NR (EXPERIMENTAL)"},
+    { MENU_CONF, MENU_ITEM, CONFIG_CAT_IN_SANDBOX,"530","CAT Running In Sandbox"},
     { MENU_CONF, MENU_ITEM, CONFIG_CAT_XLAT,"400","CAT-IQ-FREQ-XLAT"},
     { MENU_CONF, MENU_STOP, 0, "   " , NULL }
 };
@@ -582,38 +578,8 @@ const MenuDescriptor filterGroup[] = {
     { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_03,"600", "SAM Filter 3"  },
     { MENU_FILTER, MENU_ITEM, MENU_FP_SAM_04,"600", "SAM Filter 4"  },
 
-/*
-    { MENU_FILTER, MENU_ITEM, MENU_500HZ_SEL,"501","500Hz Center Freq."},
-    { MENU_FILTER, MENU_ITEM, MENU_1K4_SEL,"502","1.4k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_1K6_SEL,"503","1.6k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_1K8_SEL,"504","1.8k Center Freq."},
-    { MENU_FILTER, MENU_ITEM, MENU_2K1_SEL,"505","2.1k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_2K3_SEL,"506","2.3k Center Freq."},
-    { MENU_FILTER, MENU_ITEM, MENU_2K5_SEL,"507","2.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_2K7_SEL,"508","2.7k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_2K9_SEL,"509","2.9k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_3K2_SEL,"510","3.2k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_3K4_SEL,"511","3.4k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_3K6_SEL,"512","3.6k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_3K8_SEL,"513","3.8k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_4K0_SEL,"514","4.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_4K2_SEL,"515","4.2k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_4K4_SEL,"516","4.4k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_4K6_SEL,"517","4.6k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_4K8_SEL,"518","4.8k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_5K0_SEL,"519","5.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_5K5_SEL,"520","5.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_6K0_SEL,"521","6.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_6K5_SEL,"522","6.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_7K0_SEL,"523","7.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_7K5_SEL,"524","7.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_8K0_SEL,"525","8.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_8K5_SEL,"526","8.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_9K0_SEL,"527","9.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_9K5_SEL,"528","9.5k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_10K0_SEL,"529","10.0k Filter"},
-    { MENU_FILTER, MENU_ITEM, MENU_FP_SEL,"FPA","FilterPath (exp.)"  },
- */
+    { MENU_FILTER, MENU_ITEM, CONFIG_AM_TX_FILTER_DISABLE,"330","AM  TX Audio Filter"},
+    { MENU_FILTER, MENU_ITEM, CONFIG_SSB_TX_FILTER_DISABLE,"331","SSB TX Audio Filter"},
     { MENU_FILTER, MENU_STOP, 0, "   " , NULL }
 };
 
@@ -1224,7 +1190,7 @@ void UiMenu_RenderMenu(uint16_t mode) {
 
 #define BandInfoGenerate(BAND,SUFFIX,NAME) { TX_POWER_FACTOR_##BAND##_DEFAULT, CONFIG_##BAND##SUFFIX##_5W_ADJUST, CONFIG_##BAND##SUFFIX##_FULL_POWER_ADJUST, BAND_FREQ_##BAND , BAND_SIZE_##BAND , NAME }
 
-BandInfo bandInfo[] = {
+const BandInfo bandInfo[] = {
 				BandInfoGenerate(80,M,"80m") ,
 				BandInfoGenerate(60,M,"60m"),
 				BandInfoGenerate(40,M,"40m"),
@@ -1271,8 +1237,9 @@ bool __attribute__ ((noinline)) UiDriverMenuBandPowerAdjust(int var, uint8_t mod
 	return tchange;
 }
 
-bool __attribute__ ((noinline))  UiDriverMenuBandRevCouplingAdjust(int var, uint8_t mode, uint8_t filter_band, volatile uint8_t* adj_ptr, char* options, uint32_t* clr_ptr) {
+bool __attribute__ ((noinline))  UiDriverMenuBandRevCouplingAdjust(int var, uint8_t mode, uint8_t filter_band, char* options, uint32_t* clr_ptr) {
 	bool tchange = false;
+	volatile uint8_t *adj_ptr = &swrm.coupling_calc[filter_band];
 	if(ts.filter_band == filter_band)	{	// is this band selected?
 		tchange = UiDriverMenuItemChangeUInt8(var, mode, adj_ptr,
 				SWR_COUPLING_MIN,
@@ -1797,7 +1764,10 @@ static void UiDriverUpdateMenuLines(uchar index, uchar mode, int pos)
 			}
 		}
 		else			// indicate RED if "Compression Level" below was nonzero
+			{
 			clr = Red;
+			ts.alc_decay_var = 10;
+			}
 		//
 		if(ts.tx_comp_level == TX_AUDIO_COMPRESSION_SV)	// in "selectable value" mode?
 			ts.alc_decay = ts.alc_decay_var;	// yes, save new value
@@ -2931,37 +2901,37 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 		sprintf(options, "  %u", swrm.sensor_null);
 		break;
 	case CONFIG_FWD_REV_COUPLING_2200M_ADJ:		// RF power sensor coupling adjust (2200m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_2200, &swrm.coupling_2200m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_2200M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_630M_ADJ:		// RF power sensor coupling adjust (630m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_630, &swrm.coupling_630m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_630M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_160M_ADJ:		// RF power sensor coupling adjust (160m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_160, &swrm.coupling_160m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_160M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_80M_ADJ:		// RF power sensor coupling adjust (80m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_80, &swrm.coupling_80m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_80M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_40M_ADJ:		// RF power sensor coupling adjust (40m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_40, &swrm.coupling_40m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_40M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_20M_ADJ:		// RF power sensor coupling adjust (20m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_20, &swrm.coupling_20m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_20M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_15M_ADJ:		// RF power sensor coupling adjust (15m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_15, &swrm.coupling_15m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_15M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_6M_ADJ:		// RF power sensor coupling adjust (6m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_6, &swrm.coupling_6m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_6M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_2M_ADJ:		// RF power sensor coupling adjust (2m)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_2, &swrm.coupling_2m_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_2M, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_70CM_ADJ:		// RF power sensor coupling adjust (70cm)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_70, &swrm.coupling_70cm_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_70CM, options, &clr);
 		break;
 	case CONFIG_FWD_REV_COUPLING_23CM_ADJ:		// RF power sensor coupling adjust (23cm)
-		UiDriverMenuBandRevCouplingAdjust(var, mode, FILTER_BAND_23, &swrm.coupling_23cm_calc, options, &clr);
+		UiDriverMenuBandRevCouplingAdjust(var, mode, COUPLING_23CM, options, &clr);
 		break;
 	case CONFIG_FWD_REV_SENSE_SWAP:	// Enable/disable swap of FWD/REV A/D inputs on power sensor
 		temp_var = ts.misc_flags1 & MISC_FLAGS1_SWAP_FWDREV_SENSE;
@@ -3406,17 +3376,19 @@ static void UiDriverUpdateConfigMenuLines(uchar index, uchar mode, int pos)
 	UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_SSB,(select - MENU_FP_SSB_01)+1);
     break;
 
-    case    MENU_FP_SAM_01:
-    case    MENU_FP_SAM_02:
-    case    MENU_FP_SAM_03:
-    case    MENU_FP_SAM_04:
-    UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_SAM,(select - MENU_FP_SAM_01)+1);
-    break;
-    case CONFIG_DSP_ENABLE:	// Enable DSP NR
-		temp_var = ts.dsp_enabled;
+        case    MENU_FP_SAM_01:
+	case    MENU_FP_SAM_02:
+	case    MENU_FP_SAM_03:
+	case    MENU_FP_SAM_04:
+	    UiMenu_ChangeFilterPathMemory(var, mode, options, &clr, FILTER_MODE_SAM,(select - MENU_FP_SAM_01)+1);
+	    break;
+        case CONFIG_CAT_IN_SANDBOX:
+		temp_var = ts.cat_in_sandbox;
 		tchange = UiDriverMenuItemChangeEnableOnOff(var, mode, &temp_var,0,options,&clr);
 		if(tchange)
-		    ts.dsp_enabled = temp_var;
+		    ts.cat_in_sandbox = temp_var;
+		if(!ts.cat_in_sandbox)
+		    ts.cat_band_index = 255;
 		break;
 	case CONFIG_CAT_XLAT:	// CAT xlat reporting
 		temp_var = ts.xlat;

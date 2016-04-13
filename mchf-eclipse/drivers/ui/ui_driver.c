@@ -97,6 +97,7 @@ static void 	UiDriverHandleLoTemperature(void);
 static void 	UiDriverSwitchOffPtt(void);
 static void 	UiDriverInitMainFreqDisplay(void);
 
+static bool     UiDriver_LoadSavedConfigurationAtStartup();
 //
 //
 //
@@ -114,30 +115,6 @@ T_STEP_10MHZ
 };
 
 
-// -------------------------------------------------------
-// Constant declaration of the buttons map across ports
-// - update if moving buttons around !!!
-const ButtonMap	bm[18] =
-{
-		{BUTTON_M2_PIO,		BUTTON_M2},		// 0
-		{BUTTON_G2_PIO,		BUTTON_G2},		// 1
-		{BUTTON_G3_PIO,		BUTTON_G3},		// 2
-		{BUTTON_BNDM_PIO,	BUTTON_BNDM},	// 3
-		{BUTTON_G4_PIO,		BUTTON_G4},		// 4
-		{BUTTON_M3_PIO,		BUTTON_M3},		// 5
-		{BUTTON_STEPM_PIO,	BUTTON_STEPM},	// 6
-		{BUTTON_STEPP_PIO,	BUTTON_STEPP},	// 7
-		{BUTTON_M1_PIO,		BUTTON_M1},		// 8
-		{BUTTON_F3_PIO,		BUTTON_F3},		// 9
-		{BUTTON_F1_PIO,		BUTTON_F1},		// 10
-		{BUTTON_F2_PIO,		BUTTON_F2},		// 11
-		{BUTTON_F4_PIO,		BUTTON_F4},		// 12
-		{BUTTON_BNDP_PIO,	BUTTON_BNDP},	// 13
-		{BUTTON_F5_PIO,		BUTTON_F5},		// 14
-		{BUTTON_G1_PIO,		BUTTON_G1},		// 15
-		{GPIOC,GPIO_Pin_13},                // 16 Power Button
-		{TP_IRQ_PIO,TP_IRQ}                 // 17 TP "Button"
-};
 
 
 // The following are calibrations for the S-meter based on 6 dB per S-unit, 10 dB per 10 dB mark above S-9
@@ -326,10 +303,7 @@ void UiDriver_HandleSwitchToNextDspMode()
 	if(ts.dmod_mode != DEMOD_FM)	{ // allow selection/change of DSP only if NOT in FM
 		if((!(is_dsp_nr())) && (!(is_dsp_notch())))	// both NR and notch are inactive
 		{
-			if(ts.dsp_enabled)
-				ts.dsp_active |= DSP_NR_ENABLE;					// turn on NR
-			else
-				ts.dsp_active |= DSP_NOTCH_ENABLE;
+		ts.dsp_active |= DSP_NR_ENABLE;					// turn on NR
 		}
 		else if((is_dsp_nr()) && (!(is_dsp_notch()))) {	// NR active, notch inactive
 			if(ts.dmod_mode != DEMOD_CW)	{	// NOT in CW mode
@@ -345,10 +319,7 @@ void UiDriver_HandleSwitchToNextDspMode()
 				ts.dsp_active &= ~(DSP_NR_ENABLE | DSP_NOTCH_ENABLE);			// it was AM + wide - turn off NR and notch
 			else
 			{
-				if(ts.dsp_enabled)
-					ts.dsp_active |= DSP_NR_ENABLE;				// no - turn on NR
-				else
-					ts.dsp_active &= ~(DSP_NR_ENABLE | DSP_NOTCH_ENABLE);				// no - turn off NR and NOTCH
+			ts.dsp_active |= DSP_NR_ENABLE;				// no - turn on NR
 			}
 		//
 		else	{
@@ -526,6 +497,26 @@ void UiDriver_HandleBandButtons(uint16_t button) {
 }
 
 
+static void UiDriverFButton_F1MenuExit()
+{
+    char* label;
+    uint32_t color;
+    if(!ts.menu_var_changed) {
+      if (ts.menu_mode) {
+        label = "EXIT";
+        color = Yellow;
+      } else {
+        label = "MENU";
+        color = White;
+      }
+    } else {
+        label = ts.menu_mode?"EXIT *":"MENU *";
+        color = Orange;
+    }
+    UiDriverFButtonLabel(1,label,color);
+}
+
+
 //*----------------------------------------------------------------------------
 //* Function Name       : ui_driver_init
 //* Object              :
@@ -545,7 +536,10 @@ void ui_driver_init(void)
 	UiDriverInitFrequency();
 
 	// Load stored data from eeprom
-	UiConfiguration_LoadEepromValues();
+	if (UiDriver_LoadSavedConfigurationAtStartup() == false) {
+	  UiDriver_KeyTestScreen();
+	}
+
 	//
 	AudioManagement_CalcTxCompLevel();		// calculate current settings for TX speech compressor
 	//
@@ -854,14 +848,12 @@ static void UiDriverPublicsInit(void)
 	swrm.rev_dbm			= 0;
 	swrm.vswr			 	= 0;
 	swrm.sensor_null		= SENSOR_NULL_DEFAULT;
-	swrm.coupling_2200m_calc	= SWR_COUPLING_DEFAULT;
-	swrm.coupling_630m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_160m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_80m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_40m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_20m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_15m_calc		= SWR_COUPLING_DEFAULT;
-	swrm.coupling_6m_calc		= SWR_COUPLING_DEFAULT;
+	{
+	  int idx;
+	  for (idx = 0; idx < COUPLING_MAX; idx++) {
+	    swrm.coupling_calc[idx]    = SWR_COUPLING_DEFAULT;
+	  }
+	}
 	swrm.pwr_meter_disp		= 0;	// Display of numerical FWD/REV power metering off by default
 	swrm.pwr_meter_was_disp = 0;	// Used to indicate if FWD/REV numerical power metering WAS displayed
 
@@ -1029,11 +1021,12 @@ static void UiDriverProcessKeyboard(void)
 					//
 					ts.menu_var_changed = 0;					// clear "EEPROM SAVE IS NECESSARY" indicators
 				}
-				//
-				if(!ts.menu_mode)	// are we in menu mode?
-					UiDriverFButtonLabel(1,"MENU",White);	// no - update menu button to reflect no memory save needed
-				else
+
+                UiDriverFButton_F1MenuExit();
+
+				if(ts.menu_mode) {	// are we in menu mode?
 					UiMenu_RenderMenu(MENU_RENDER_ONLY);	// update menu display to remove indicator to do power-off to save EEPROM value
+				}
 				break;
 			case BUTTON_F2_PRESSED:	// Press-and-hold button F2
 				// Move to the BEGINNING of the current menu structure
@@ -1274,7 +1267,7 @@ static void UiDriverProcessKeyboard(void)
 //* Output Parameters   :
 //* Functions called    :
 //*----------------------------------------------------------------------------
-void UiInitRxParms(void)
+void UiInitRxParms()
 {
 
     // Init / Functional changes to operation in RX path
@@ -1414,7 +1407,7 @@ static void UiDriverProcessFunctionKeyClick(ulong id)
 				filter_path_change = false;			// deactivate while in menu mode
 				UiDriverChangeFilterDisplay();
 				UiSpectrumClearDisplay();
-				UiDriverFButtonLabel(1,"EXIT", Yellow);
+				UiDriverFButton_F1MenuExit();
 				UiDriverFButtonLabel(2,"PREV",Yellow);
 				UiDriverFButtonLabel(3,"NEXT",Yellow);
 				UiDriverFButtonLabel(4,"DEFLT",Yellow);
@@ -1461,18 +1454,7 @@ static void UiDriverProcessFunctionKeyClick(ulong id)
 				UiDriverChangeEncoderThreeMode(0);
 				UiDriverChangeFilterDisplay();	// update bandwidth display
 				// Label for Button F1
-				{
-					char* label;
-					uint32_t color;
-					if(!ts.menu_var_changed) {
-						label = " MENU  ";
-						color = White;
-					} else {
-						label = " MENU *";
-						color = Orange;
-					}
-					UiDriverFButtonLabel(1,label,color);
-				}
+				UiDriverFButton_F1MenuExit();
 				// Label for Button F2
 				UiDriverFButtonLabel(2,"SNAP",White);
 
@@ -2110,7 +2092,7 @@ static void UiDriverCreateFunctionButtons(bool full_repaint)
 	}
 
 	// Button F1
-	UiDriverFButtonLabel(1,"MENU",White);
+	UiDriverFButton_F1MenuExit();
 	// Button F2
 	UiDriverFButtonLabel(2,"SNAP",White);
 
@@ -2724,13 +2706,12 @@ typedef struct BandFilterDescriptor {
 // The descriptor array below has to be ordered from the lowest BPF frequency filter
 // to the highest.
 static const BandFilterDescriptor bandFilters[BAND_FILTER_NUM] = {
-		{ BAND_FILTER_UPPER_160, FILTER_BAND_160, BAND_MODE_160 },
-		{ BAND_FILTER_UPPER_80, FILTER_BAND_80, BAND_MODE_80 },
-		{ BAND_FILTER_UPPER_40, FILTER_BAND_40, BAND_MODE_40 },
-		{ BAND_FILTER_UPPER_20, FILTER_BAND_20, BAND_MODE_20 },
-		{ BAND_FILTER_UPPER_10, FILTER_BAND_15, BAND_MODE_10 },
-		{ BAND_FILTER_UPPER_6, FILTER_BAND_6, BAND_MODE_6 },
-		{ BAND_FILTER_UPPER_4, FILTER_BAND_4, BAND_MODE_4 }
+		{ BAND_FILTER_UPPER_160, COUPLING_160M, BAND_MODE_160 },
+		{ BAND_FILTER_UPPER_80,  COUPLING_80M, BAND_MODE_80 },
+		{ BAND_FILTER_UPPER_40,  COUPLING_40M, BAND_MODE_40 },
+		{ BAND_FILTER_UPPER_20,  COUPLING_20M, BAND_MODE_20 },
+		{ BAND_FILTER_UPPER_10,  COUPLING_15M, BAND_MODE_10 },
+		{ BAND_FILTER_UPPER_6,  COUPLING_6M, BAND_MODE_6 }
 };
 
 
@@ -3202,7 +3183,7 @@ void UiDriverChangeTuningStep(uchar is_up)
 static bool UiDriver_IsButtonPressed(ulong button_num)
 {
     bool retval = false;
-	if(button_num < 18) {				// buttons 0-15 are the normal keypad buttons
+	if(button_num < BUTTON_NUM) {				// buttons 0-15 are the normal keypad buttons
 	    if(!ts.boot_halt_flag) {		// are we NOT in "boot halt" mode?
 	      retval = GPIO_ReadInputDataBit(bm[button_num].port,bm[button_num].button) == 0;		// in normal mode - return key value
 	    }
@@ -3701,13 +3682,15 @@ static void UiDriverChangeBand(uchar is_up)
 	//printf("current index: %d and freq: %d\n\r",curr_band_index,tune_bands[ts.band]);
 
 	// Save old band values
-	if(curr_band_index < (MAX_BANDS))
-	{
-		// Save dial
-		vfo[vfo_sel].band[curr_band_index].dial_value = df.tune_old;
-		vfo[vfo_sel].band[curr_band_index].decod_mode = ts.dmod_mode;
-	}
-
+	if(curr_band_index < (MAX_BANDS) && ts.cat_band_index == 255)
+	    {
+	    // Save dial
+	    vfo[vfo_sel].band[curr_band_index].dial_value = df.tune_old;
+	    vfo[vfo_sel].band[curr_band_index].decod_mode = ts.dmod_mode;
+	    }
+	else
+	    ts.cat_band_index = 255;
+	    
 	// Handle direction
 	if(is_up)
 	{
@@ -5078,6 +5061,94 @@ static void UiDriverHandleSmeter(void)
 	}
 }
 
+void UiDriver_PowerFromADCValue(float val, float sensor_null, float coupling_calc,volatile float* pwr_ptr, volatile float* dbm_ptr) {
+  float pwr;
+  float dbm;
+  val *= SWR_ADC_VOLT_REFERENCE;    // get nominal A/D reference voltage
+  val /= SWR_ADC_FULL_SCALE;        // divide by full-scale A/D count to yield actual input voltage from detector
+  val += sensor_null;               // offset result
+
+  if(val <= LOW_POWER_CALC_THRESHOLD) {   // is this low power as evidenced by low voltage from the sensor?
+        pwr = LOW_RF_PWR_COEFF_A + (LOW_RF_PWR_COEFF_B * val) + (LOW_RF_PWR_COEFF_C * pow(val,2 )) + (LOW_RF_PWR_COEFF_D * pow(val, 3));
+  } else {        // it is high power
+        pwr = HIGH_RF_PWR_COEFF_A + (HIGH_RF_PWR_COEFF_B * val) + (HIGH_RF_PWR_COEFF_C * pow(val, 2));
+  }
+  // calculate forward and reverse RF power in watts (p = a + bx + cx^2) for high power (above 50-60
+
+  if(pwr < 0) {   // prevent negative power readings from emerging from the equations - particularly at zero output power
+        pwr = 0;
+  }
+
+  dbm = (10 * (log10(pwr))) + 30 + coupling_calc;
+  pwr = pow10(dbm/10)/1000;
+  *pwr_ptr = pwr;
+  *dbm_ptr = dbm;
+}
+
+static bool UiDriver_UpdatePowerAndVSWR() {
+
+  uint16_t  val_p,val_s = 0;
+  float sensor_null, coupling_calc;
+  bool retval = false;
+
+  swrm.skip++;
+  if(swrm.skip >= SWR_SAMPLES_SKP) {
+    swrm.skip = 0;
+
+    // Collect samples
+    if(swrm.p_curr < SWR_SAMPLES_CNT)
+    {
+      // Get next sample
+      if(!(ts.misc_flags1 & MISC_FLAGS1_SWAP_FWDREV_SENSE))   {   // is bit NOT set?  If this is so, do NOT swap FWD/REV inputs from power detectors
+        val_p = ADC_GetConversionValue(ADC2); // forward
+        val_s = ADC_GetConversionValue(ADC3); // return
+      }
+      else    {   // FWD/REV bits should be swapped
+        val_p = ADC_GetConversionValue(ADC3); // forward
+        val_s = ADC_GetConversionValue(ADC2); // return
+      }
+
+      // Add to accumulator to average A/D values
+      swrm.fwd_calc += (float)val_p;
+      swrm.rev_calc += (float)val_s;
+
+      swrm.p_curr++;
+    } else {
+      // obtain and calculate power meter coupling coefficients
+      coupling_calc = swrm.coupling_calc[ts.filter_band];
+      coupling_calc -= 100;                       // offset to zero
+      coupling_calc /= 10;                        // rescale to 0.1 dB/unit
+
+
+      sensor_null = (float)swrm.sensor_null;  // get calibration factor
+      sensor_null -= 100;                     // offset it so that 100 = 0
+      sensor_null /= 1000;                    // divide so that each step = 1 millivolt
+
+      // Compute average values
+
+      swrm.fwd_calc /= SWR_SAMPLES_CNT;
+      swrm.rev_calc /= SWR_SAMPLES_CNT;
+
+      UiDriver_PowerFromADCValue(swrm.fwd_calc, sensor_null, coupling_calc,&swrm.fwd_pwr, &swrm.fwd_dbm);
+      UiDriver_PowerFromADCValue(swrm.rev_calc, sensor_null, coupling_calc,&swrm.rev_pwr, &swrm.rev_dbm);
+
+      // Reset accumulators and variables for power measurements
+      swrm.p_curr   = 0;
+      swrm.fwd_calc = 0;
+      swrm.rev_calc = 0;
+
+
+      swrm.vswr = swrm.fwd_dbm-swrm.rev_dbm;      // calculate VSWR
+
+      // Calculate VSWR from power readings
+
+      swrm.vswr = (1+sqrtf(swrm.rev_pwr/swrm.fwd_pwr))/(1-sqrt(swrm.rev_pwr/swrm.fwd_pwr));
+      retval = true;
+    }
+  }
+  return retval;
+}
+
 //*----------------------------------------------------------------------------
 //* Function Name       : UiDriverHandleLowerMeter
 //* Object              : Power, SWR, ALC and Audio indicator
@@ -5087,240 +5158,96 @@ static void UiDriverHandleSmeter(void)
 //*----------------------------------------------------------------------------
 static void UiDriverHandleLowerMeter(void)
 {
-	ushort	val_p,val_s = 0;
-	float	sensor_null, coupling_calc, scale_calc;
-	char txt[32];
-	static float fwd_pwr_avg, rev_pwr_avg;
-	static uchar	old_power_level = 99;
+  float	scale_calc;
+  char txt[32];
+  static float fwd_pwr_avg, rev_pwr_avg;
+  static uchar	old_power_level = 99;
 
-	//float 	rho,swr;
+  // Only in TX mode
+  if(ts.txrx_mode != TRX_MODE_TX)	{
+    swrm.vswr_dampened = 0;		// reset averaged readings when not in TX mode
+    fwd_pwr_avg = -1;
+    rev_pwr_avg = -1;
+  } else if (UiDriver_UpdatePowerAndVSWR()) {
+    // FIXME: SCALCULATION ENDS HERE, NOW WE DO DISPLAY, SEPARATE
 
-	// Only in TX mode
-	if(ts.txrx_mode != TRX_MODE_TX)	{
-		swrm.vswr_dampened = 0;		// reset averaged readings when not in TX mode
-		fwd_pwr_avg = -1;
-		rev_pwr_avg = -1;
-		return;
-	}
+    // display FWD, REV power, in milliwatts - used for calibration - IF ENABLED
+    if(swrm.pwr_meter_disp)	{
+      if((fwd_pwr_avg < 0) || (ts.power_level != old_power_level)) {	// initialize with current value if it was zero (e.g. reset) or power level changed
+        fwd_pwr_avg = swrm.fwd_pwr;
+      }
 
-	swrm.skip++;
-	if(swrm.skip < SWR_SAMPLES_SKP)
-		return;
+      fwd_pwr_avg = fwd_pwr_avg * (1-PWR_DAMPENING_FACTOR);	// apply IIR smoothing to forward power reading
+      fwd_pwr_avg += swrm.fwd_pwr * PWR_DAMPENING_FACTOR;
 
-	swrm.skip = 0;
+      if((rev_pwr_avg < 0) || (ts.power_level != old_power_level)) {	// initialize with current value if it was zero (e.g. reset) or power level changed
+        rev_pwr_avg = swrm.rev_pwr;
+      }
 
-	// Collect samples
-	if(swrm.p_curr < SWR_SAMPLES_CNT)
-	{
-		// Get next sample
-		if(!(ts.misc_flags1 & MISC_FLAGS1_SWAP_FWDREV_SENSE))	{	// is bit NOT set?  If this is so, do NOT swap FWD/REV inputs from power detectors
-			val_p = ADC_GetConversionValue(ADC2);	// forward
-			val_s = ADC_GetConversionValue(ADC3);	// return
-		}
-		else	{	// FWD/REV bits should be swapped
-			val_p = ADC_GetConversionValue(ADC3);	// forward
-			val_s = ADC_GetConversionValue(ADC2);	// return
-		}
+      old_power_level = ts.power_level;		// update power level change detector
 
-		// Add to accumulator to average A/D values
-		swrm.fwd_calc += (float)val_p;
-		swrm.rev_calc += (float)val_s;
+      rev_pwr_avg = rev_pwr_avg * (1-PWR_DAMPENING_FACTOR);	// apply IIR smoothing to reverse power reading
+      rev_pwr_avg += swrm.rev_pwr * PWR_DAMPENING_FACTOR;
 
-		swrm.p_curr++;
+      sprintf(txt, "%d,%d   ", (int)(fwd_pwr_avg*1000), (int)(rev_pwr_avg*1000));		// scale to display power in milliwatts
+      UiLcdHy28_PrintText    (POS_PWR_NUM_IND_X, POS_PWR_NUM_IND_Y,txt,Grey,Black,0);
+      swrm.pwr_meter_was_disp = 1;	// indicate the power meter WAS displayed
+    }
 
-		//printf("sample no %d\n\r",swrm.p_curr);
-		return;
-	}
-
-	sensor_null = (float)swrm.sensor_null;	// get calibration factor
-	sensor_null -= 100;						// offset it so that 100 = 0
-	sensor_null /= 1000;					// divide so that each step = 1 millivolt
-
-	// Compute average values
-
-	swrm.fwd_calc /= SWR_SAMPLES_CNT;
-	swrm.rev_calc /= SWR_SAMPLES_CNT;
+    if((swrm.pwr_meter_was_disp) && (!swrm.pwr_meter_disp))	{	// had the numerical display been enabled - and it is now disabled?
+      UiLcdHy28_PrintText    (POS_PWR_NUM_IND_X, POS_PWR_NUM_IND_Y,"            ",White,Black,0);	// yes - overwrite location of numerical power meter display to blank it
+      swrm.pwr_meter_was_disp = 0;	// clear flag so we don't do this again
+    }
 
 
-	// Calculate voltage of A/D inputs
+    // calculate and display RF power reading
 
-	swrm.fwd_calc *= SWR_ADC_VOLT_REFERENCE;	// get nominal A/D reference voltage
-	swrm.fwd_calc /= SWR_ADC_FULL_SCALE;		// divide by full-scale A/D count to yield actual input voltage from detector
-	swrm.fwd_calc += sensor_null;				// offset result
+    scale_calc = (uchar)(swrm.fwd_pwr * 3);		// 3 dots-per-watt for RF power meter
 
-	swrm.rev_calc *= SWR_ADC_VOLT_REFERENCE;	// get nominal A/D reference voltage
-	swrm.rev_calc /= SWR_ADC_FULL_SCALE;		// divide by full-scale A/D count to yield actual input voltage from detector
-	swrm.rev_calc += sensor_null;
+    UiDriverUpdateTopMeterA(scale_calc);
 
+    // Do selectable meter readings
 
-	// calculate forward and reverse RF power in watts (p = a + bx + cx^2) for high power (above 50-60 milliwatts) and (p = a + bx + cx^2 + dx^3) for low power.
-
-	if(swrm.fwd_calc <= LOW_POWER_CALC_THRESHOLD)	// is this low power as evidenced by low voltage from the sensor?
-		swrm.fwd_pwr = LOW_RF_PWR_COEFF_A + (LOW_RF_PWR_COEFF_B * swrm.fwd_calc) + (LOW_RF_PWR_COEFF_C * pow(swrm.fwd_calc,2 )) + (LOW_RF_PWR_COEFF_D * pow(swrm.fwd_calc, 3));
-	else		// it is high power
-		swrm.fwd_pwr = HIGH_RF_PWR_COEFF_A + (HIGH_RF_PWR_COEFF_B * swrm.fwd_calc) + (HIGH_RF_PWR_COEFF_C * pow(swrm.fwd_calc, 2));
-
-	if(swrm.rev_calc <= LOW_POWER_CALC_THRESHOLD)	// is this low power as evidenced by low voltage from the sensor?
-		swrm.rev_pwr = LOW_RF_PWR_COEFF_A + (LOW_RF_PWR_COEFF_B * swrm.rev_calc) + (LOW_RF_PWR_COEFF_C * pow(swrm.rev_calc, 2)) + (LOW_RF_PWR_COEFF_D * pow(swrm.rev_calc,3));
-	else
-		swrm.rev_pwr = HIGH_RF_PWR_COEFF_A + (HIGH_RF_PWR_COEFF_B * swrm.rev_calc) + (HIGH_RF_PWR_COEFF_C * pow(swrm.rev_calc, 2));
-	//
-	if(swrm.fwd_pwr < 0)	// prevent negative power readings from emerging from the equations - particularly at zero output power
-		swrm.fwd_pwr = 0;
-	//
-	if(swrm.rev_pwr < 0)
-		swrm.rev_pwr = 0;
-
-	// obtain and calculate power meter coupling coefficients
-	switch(ts.filter_band)	{
-		case	FILTER_BAND_2200:
-			coupling_calc = (float)swrm.coupling_2200m_calc;	// get coupling coefficient calibration for 2200 meters
-			break;
-		case	FILTER_BAND_630:
-			coupling_calc = (float)swrm.coupling_630m_calc;	// get coupling coefficient calibration for 630 meters
-			break;
-		case	FILTER_BAND_160:
-			coupling_calc = (float)swrm.coupling_160m_calc;	// get coupling coefficient calibration for 160 meters
-			break;
-		case	FILTER_BAND_80:
-			coupling_calc = (float)swrm.coupling_80m_calc;	// get coupling coefficient calibration for 80 meters
-			break;
-		case	FILTER_BAND_6:
-			coupling_calc = (float)swrm.coupling_6m_calc;	// get coupling coefficient calibration for 6 meters
-			break;
-		case	FILTER_BAND_20:
-			coupling_calc = (float)swrm.coupling_20m_calc;	// get coupling coefficient calibration for 30/20 meters
-			break;
-		case	FILTER_BAND_15:
-			coupling_calc = (float)swrm.coupling_15m_calc;	// get coupling coefficient calibration for 17/15/12/10 meters
-			break;
-		case	FILTER_BAND_40:
-		default:
-			coupling_calc = (float)swrm.coupling_40m_calc;	// get coupling coefficient calibration for 40/60 meters
-			break;
-	}
-	//
-	coupling_calc -= 100;						// offset to zero
-	coupling_calc /= 10;						// rescale to 0.1 dB/unit
-
-	// calculate forward and reverse RF power in dBm  (We are using dBm - just because!)
-
-	swrm.fwd_dbm = (10 * (log10(swrm.fwd_pwr))) + 30 + coupling_calc;
-	swrm.rev_dbm = (10 * (log10(swrm.rev_pwr))) + 30 + coupling_calc;
-
-	// now convert back to watts with the coupling coefficient included
-
-	swrm.fwd_pwr = pow10(swrm.fwd_dbm/10)/1000;
-	swrm.rev_pwr = pow10(swrm.rev_dbm/10)/1000;
-
-	swrm.vswr = swrm.fwd_dbm-swrm.rev_dbm;		// calculate VSWR
-
-	// Calculate VSWR from power readings
-
-	swrm.vswr = (1+sqrtf(swrm.rev_pwr/swrm.fwd_pwr))/(1-sqrt(swrm.rev_pwr/swrm.fwd_pwr));
-
-	// display FWD, REV power, in milliwatts - used for calibration - IF ENABLED
-	if(swrm.pwr_meter_disp)	{
-		if((fwd_pwr_avg < 0) || (ts.power_level != old_power_level))	// initialize with current value if it was zero (e.g. reset) or power level changed
-			fwd_pwr_avg = swrm.fwd_pwr;
-		//
-		fwd_pwr_avg = fwd_pwr_avg * (1-PWR_DAMPENING_FACTOR);	// apply IIR smoothing to forward power reading
-		fwd_pwr_avg += swrm.fwd_pwr * PWR_DAMPENING_FACTOR;
-		//
-		if((rev_pwr_avg < 0) || (ts.power_level != old_power_level))	{	// initialize with current value if it was zero (e.g. reset) or power level changed
-			rev_pwr_avg = swrm.rev_pwr;
-		}
-		//
-		old_power_level = ts.power_level;		// update power level change detector
-		//
-		//
-		rev_pwr_avg = rev_pwr_avg * (1-PWR_DAMPENING_FACTOR);	// apply IIR smoothing to reverse power reading
-		rev_pwr_avg += swrm.rev_pwr * PWR_DAMPENING_FACTOR;
-		//
-		sprintf(txt, "%d,%d   ", (int)(fwd_pwr_avg*1000), (int)(rev_pwr_avg*1000));		// scale to display power in milliwatts
-		UiLcdHy28_PrintText    (POS_PWR_NUM_IND_X, POS_PWR_NUM_IND_Y,txt,Grey,Black,0);
-		swrm.pwr_meter_was_disp = 1;	// indicate the power meter WAS displayed
-	}
-	//
-	if((swrm.pwr_meter_was_disp) && (!swrm.pwr_meter_disp))	{	// had the numerical display been enabled - and it is now disabled?
-		UiLcdHy28_PrintText    (POS_PWR_NUM_IND_X, POS_PWR_NUM_IND_Y,"            ",White,Black,0);	// yes - overwrite location of numerical power meter display to blank it
-		swrm.pwr_meter_was_disp = 0;	// clear flag so we don't do this again
-	}
-
-	//
-	// used for debugging
-//		char txt[32];
-//		sprintf(txt, " %d,%d,%d   ", (ulong)(swrm.fwd_pwr*100), (ulong)(swrm.rev_pwr*100),(ulong)(swrm.vswr*10));
-//		UiLcdHy28_PrintText    ((POS_RIT_IND_X + 1), (POS_RIT_IND_Y + 20),txt,White,Grid,0);
-	//
-
-	//printf("aver power %d, aver ret %d\n\r", val_p,val_s);
-
-	// Transmitter protection - not enabled yet
-/*
-	if(val_s > 2000)
-	{
-		// Display
-		UiLcdHy28_PrintText(((POS_SM_IND_X + 18) + 140),(POS_SM_IND_Y + 59),"PROT",Red,Black,4);
-
-		// Disable tx - not used for now
-		//ts.tx_power_factor	= 0.0;
-	}
-*/
-	// calculate and display RF power reading
-	//
-	scale_calc = (uchar)(swrm.fwd_pwr * 3);		// 3 dots-per-watt for RF power meter
-	//
-	UiDriverUpdateTopMeterA(scale_calc);
-
-	//
-	// Do selectable meter readings
-	//
-	if(ts.tx_meter_mode == METER_SWR)	{
-		if(swrm.fwd_pwr >= SWR_MIN_CALC_POWER)	{		// is the forward power high enough for valid VSWR calculation?
-														// (Do nothing/freeze old data if below this power level)
-			//
-			if(swrm.vswr_dampened < 1)	// initialize averaging if this is the first time (e.g. VSWR <1 = just returned from RX)
-				swrm.vswr_dampened = swrm.vswr;
-			else	{
-				swrm.vswr_dampened = swrm.vswr_dampened * (1 - VSWR_DAMPENING_FACTOR);
-				swrm.vswr_dampened += swrm.vswr * VSWR_DAMPENING_FACTOR;
-			}
-			//
-			scale_calc = (uchar)(swrm.vswr_dampened * 4);		// yes - four dots per unit of VSWR
-			UiDriverUpdateBtmMeter((uchar)(scale_calc), 13);	// update the meter, setting the "red" threshold
-		}
-	}
-	else if(ts.tx_meter_mode == METER_ALC)	{
-		scale_calc = ads.alc_val;		// get TX ALC value
-		scale_calc *= scale_calc;		// square the value
-		scale_calc = log10f(scale_calc);	// get the log10
-		scale_calc *= -10;		// convert it to DeciBels and switch sign and then scale it for the meter
-		if(scale_calc < 0) {
-			scale_calc = 0;
-		}
-		//
-		UiDriverUpdateBtmMeter((uchar)(scale_calc), 13);	// update the meter, setting the "red" threshold
-	}
-	else if(ts.tx_meter_mode == METER_AUDIO)	{
-		scale_calc = ads.peak_audio/10000;		// get a copy of the peak TX audio (maximum reference = 30000)
-		ads.peak_audio = 0;					// reset the peak detect
-		scale_calc *= scale_calc;			// square the value
-		scale_calc = log10f(scale_calc);	// get the log10
-		scale_calc *= 10;					// convert to DeciBels and scale for the meter
-		scale_calc += 11;					// offset for meter
-		//
-		if(scale_calc < 0)
-			scale_calc = 0;
-		//
-		UiDriverUpdateBtmMeter((uchar)(scale_calc), 22);	// update the meter, setting the "red" threshold
-	}
-
-	// Reset accumulators and variables for power measurements
-
-	swrm.p_curr   = 0;
-	swrm.fwd_calc = 0;
-	swrm.rev_calc = 0;
+    if(ts.tx_meter_mode == METER_SWR)	{
+      if(swrm.fwd_pwr >= SWR_MIN_CALC_POWER)	{		// is the forward power high enough for valid VSWR calculation?
+        // (Do nothing/freeze old data if below this power level)
+        if(swrm.vswr_dampened < 1)	// initialize averaging if this is the first time (e.g. VSWR <1 = just returned from RX)
+          swrm.vswr_dampened = swrm.vswr;
+        else {
+          swrm.vswr_dampened = swrm.vswr_dampened * (1 - VSWR_DAMPENING_FACTOR);
+          swrm.vswr_dampened += swrm.vswr * VSWR_DAMPENING_FACTOR;
+        }
+        //
+        scale_calc = (uchar)(swrm.vswr_dampened * 4);		// yes - four dots per unit of VSWR
+        UiDriverUpdateBtmMeter((uchar)(scale_calc), 13);	// update the meter, setting the "red" threshold
+      }
+    }
+    else if(ts.tx_meter_mode == METER_ALC)	{
+      scale_calc = ads.alc_val;		// get TX ALC value
+      scale_calc *= scale_calc;		// square the value
+      scale_calc = log10f(scale_calc);	// get the log10
+      scale_calc *= -10;		// convert it to DeciBels and switch sign and then scale it for the meter
+      if(scale_calc < 0) {
+        scale_calc = 0;
+      }
+      //
+      UiDriverUpdateBtmMeter((uchar)(scale_calc), 13);	// update the meter, setting the "red" threshold
+    }
+    else if(ts.tx_meter_mode == METER_AUDIO)	{
+      scale_calc = ads.peak_audio/10000;		// get a copy of the peak TX audio (maximum reference = 30000)
+      ads.peak_audio = 0;					// reset the peak detect
+      scale_calc *= scale_calc;			// square the value
+      scale_calc = log10f(scale_calc);	// get the log10
+      scale_calc *= 10;					// convert to DeciBels and scale for the meter
+      scale_calc += 11;					// offset for meter
+      //
+      if(scale_calc < 0) {
+        scale_calc = 0;
+      }
+      //
+      UiDriverUpdateBtmMeter((uchar)(scale_calc), 22);	// update the meter, setting the "red" threshold
+    }
+  }
 }
 
 
@@ -6017,78 +5944,107 @@ void UiCWSidebandMode(void)
 //  Comments            : WARNING:  Do *NOT* do this (press the buttons on power-up) when first loading a new firmware version as the EEPROM will be automatically be written over at startup!!!  [KA7OEI October, 2015]
 //*----------------------------------------------------------------------------
 //
-void UiCheckForEEPROMLoadDefaultRequest(void)
-{	uint16_t i;
-	if((ts.version_number_build != TRX4M_VER_BUILD) || (ts.version_number_release != TRX4M_VER_RELEASE) || (ts.version_number_minor != TRX4M_VER_MINOR))	{	// Does the current version NOT match what was in the EEPROM?
-		return;		// it does NOT match - DO NOT allow a "Load Default" operation this time!
-	}
 
-	if((UiDriver_IsButtonPressed(BUTTON_F1_PRESSED)) && (UiDriver_IsButtonPressed(BUTTON_F3_PRESSED)) && (!UiDriver_IsButtonPressed(BUTTON_F5_PRESSED)))	{	// Are F1, F3 and F5 being held down?
-		ts.load_eeprom_defaults = 1;						// yes, set flag to indicate that defaults will be loaded instead of those from EEPROM
-		ts.boot_halt_flag = 1;								// set flag to halt boot-up
-		UiConfiguration_LoadEepromValues();							// call function to load values - default instead of EEPROM
-		//
-		UiLcdHy28_LcdClear(Red);							// clear the screen
-		//													// now do all of the warnings, blah, blah...
-		UiLcdHy28_PrintText(2,05,"   EEPROM DEFAULTS",White,Red,1);
-		UiLcdHy28_PrintText(2,35,"      LOADED!!!",White,Red,1);
-		UiLcdHy28_PrintText(2,70,"  DISCONNECT power NOW if you do NOT",Cyan,Red,0);
-		UiLcdHy28_PrintText(2,85,"  want to lose your current settings!",Cyan,Red,0);
-		UiLcdHy28_PrintText(2,120,"  If you want to save default settings",Green,Red,0);
-		UiLcdHy28_PrintText(2,135,"  press and hold POWER button to power",Green,Red,0);
-		UiLcdHy28_PrintText(2,150,"   down and save settings to EEPROM.",Green,Red,0);
-		//
-		// On screen delay									// delay a bit...
-		for(i = 0; i < 10; i++)
-		   non_os_delay();
-		//
-		// add this for emphasis
-		UiLcdHy28_PrintText(50,195,"     YOU HAVE BEEN WARNED!",Yellow,Red,0);
-		UiLcdHy28_PrintText(2,225,"               [Radio startup halted]",White,Red,4);
-	}
-}
-//
+enum CONFIG_DEFAULTS{
+CONFIG_DEFAULTS_KEEP = 0,
+CONFIG_DEFAULTS_LOAD_FREQ,
+CONFIG_DEFAULTS_LOAD_ALL
+};
 
-//
-//*----------------------------------------------------------------------------
-//* Function Name       : UiCheckForEEPROMLoadFreqModeDefaultRequest
-//* Object              : Cause default values to be loaded for frequency/mode instead of EEPROM-stored values, show informational/warning splash screen, pause
-//* Input Parameters    :
-//* Output Parameters   :
-//* Functions called    :
-//* Comments            : The user MUST make a decision at that point, anyway:  To disconnect power
-//  Comments            : preserve "old" settings or to power down using the POWER button to the new, default settings to EEPROM.
-//  Comments            : WARNING:  Do *NOT* do this (press the buttons on power-up) when first loading a new firmware version as the EEPROM will be automatically be written over at startup!!!  [KA7OEI October, 2015]
-//*----------------------------------------------------------------------------
-//
-void UiCheckForEEPROMLoadFreqModeDefaultRequest(void)
-{	uint16_t i;
-	if((ts.version_number_build != TRX4M_VER_BUILD) || (ts.version_number_release != TRX4M_VER_RELEASE) || (ts.version_number_minor != TRX4M_VER_MINOR))	{	// Does the current version NOT match what was in the EEPROM?
-		return;		// it does NOT match - DO NOT allow a "Load Default" operation this time!
-	}
 
-	if((UiDriver_IsButtonPressed(BUTTON_F2_PRESSED)) && (UiDriver_IsButtonPressed(BUTTON_F4_PRESSED)))	{	// Are F2, F4 being held down?
-		ts.load_freq_mode_defaults = 1;						// yes, set flag to indicate that frequency/mode defaults will be loaded instead of those from EEPROM
-		ts.boot_halt_flag = 1;								// set flag to halt boot-up
-		UiConfiguration_LoadEepromValues();							// call function to load values - default instead of EEPROM
-		//
-		UiLcdHy28_LcdClear(Yellow);							// clear the screen
-		//													// now do all of the warnings, blah, blah...
-		UiLcdHy28_PrintText(2,05,	"   FREQUENCY/MODE",Black,Yellow,1);
-		UiLcdHy28_PrintText(2,35,	" DEFAULTS LOADED!!!",Black,Yellow,1);
-		UiLcdHy28_PrintText(2,70,	"  DISCONNECT power NOW if you do NOT",Black,Yellow,0);
-		UiLcdHy28_PrintText(2,85,	"want to lose your current frequencies!",Black,Yellow,0);
-		UiLcdHy28_PrintText(2,120,	"If you want to save default frequencies",Black,Yellow,0);
-		UiLcdHy28_PrintText(2,135,	"  press and hold POWER button to power",Black,Yellow,0);
-		UiLcdHy28_PrintText(2,150,	"   down and save settings to EEPROM.",Black,Yellow,0);
-		// On screen delay									// delay a bit...
-		for(i = 0; i < 10; i++)
-		   non_os_delay();
+/*
+ * @brief Handles the loading of the configuration at startup (including the load of defaults if requested);
+ * @returns false if it is a normal startup, true if defaults have been loaded
+ */
 
-		// add this for emphasis
-		UiLcdHy28_PrintText(50,195,"     YOU HAVE BEEN WARNED!",Black,Yellow,0);
-		UiLcdHy28_PrintText(2,225,"               [Radio startup halted]",Black,Yellow,4);
-	}
+static bool UiDriver_LoadSavedConfigurationAtStartup()
+{
+
+  uint16_t i;
+  bool retval = false;
+  uint8_t load_mode = CONFIG_DEFAULTS_KEEP;
+
+  if (UiDriver_IsButtonPressed(BUTTON_F1_PRESSED) && UiDriver_IsButtonPressed(BUTTON_F3_PRESSED) && UiDriver_IsButtonPressed(BUTTON_F5_PRESSED)) {
+    load_mode = CONFIG_DEFAULTS_LOAD_ALL;
+  } else if (UiDriver_IsButtonPressed(BUTTON_F2_PRESSED) && UiDriver_IsButtonPressed(BUTTON_F4_PRESSED)) {
+    load_mode = CONFIG_DEFAULTS_LOAD_FREQ;
+  }
+
+  if(load_mode != CONFIG_DEFAULTS_KEEP) {
+    // let us make sure, the user knows what he/she is doing
+    // in case of change of mindes, do normal configuration load
+
+    uint32_t clr_fg, clr_bg;
+    const char* top_line;
+
+    switch (load_mode) {
+    case CONFIG_DEFAULTS_LOAD_ALL:
+      clr_bg = Red;
+      clr_fg = White;
+      top_line = "    ALL DEFAULTS";
+      break;
+    case CONFIG_DEFAULTS_LOAD_FREQ:
+      clr_bg = Yellow;
+      clr_fg = Black;
+      top_line = " FREQ/MODE DEFAULTS";
+      break;
+    }
+
+
+    UiLcdHy28_LcdClear(clr_bg);							// clear the screen
+    //													// now do all of the warnings, blah, blah...
+    UiLcdHy28_PrintText(2,05,top_line,clr_fg,clr_bg,1);
+    UiLcdHy28_PrintText(2,35," -> LOAD REQUEST <-",clr_fg,clr_bg,1);
+    UiLcdHy28_PrintText(2,70,"      If you don't want to do this     ",clr_fg,clr_bg,0);
+    UiLcdHy28_PrintText(2,85," press POWER button to start normally. ",clr_fg,clr_bg,0);
+    UiLcdHy28_PrintText(2,120,"  If you want to load default settings",clr_fg,clr_bg,0);
+    UiLcdHy28_PrintText(2,135,"  press and hold BAND+ AND BAND-.",clr_fg,clr_bg,0);
+    UiLcdHy28_PrintText(2,150,"  Settings will be saved at POWEROFF",clr_fg,clr_bg,0);
+    //
+    // On screen delay									// delay a bit...
+    for(i = 0; i < 100; i++) {
+      non_os_delay();
+    }
+    //
+    // add this for emphasis
+    UiLcdHy28_PrintText(2,195,"          PRESS BAND+ and BAND-  ",clr_fg,clr_bg,0);
+    UiLcdHy28_PrintText(2,207,"           TO CONFIRM LOADING    ",clr_fg,clr_bg,0);
+
+    while((((UiDriver_IsButtonPressed(BUTTON_BNDM_PRESSED)) && (UiDriver_IsButtonPressed(BUTTON_BNDP_PRESSED))) == false) && UiDriver_IsButtonPressed(BUTTON_POWER_PRESSED) == false){ non_os_delay(); }
+
+
+    if(UiDriver_IsButtonPressed(BUTTON_POWER_PRESSED)) {
+      UiLcdHy28_LcdClear(Black);							// clear the screen
+      UiLcdHy28_PrintText(2,108,"      ...performing normal start...",White,Black,0);
+      for(i = 0; i < 100; i++)
+        non_os_delay();
+      load_mode = CONFIG_DEFAULTS_KEEP;
+      retval = false;
+    } else {
+      UiLcdHy28_LcdClear(clr_bg);							// clear the screen
+      UiLcdHy28_PrintText(2,108,"     loading defaults in progress...",clr_fg,clr_bg,0);
+      for(i = 0; i < 100; i++)
+        non_os_delay();
+      // call function to load values - default instead of EEPROM
+      retval = true;
+      ts.menu_var_changed = true;
+    }
+  }
+
+  switch (load_mode) {
+  case CONFIG_DEFAULTS_LOAD_ALL:
+    ts.load_eeprom_defaults = true;                           // yes, set flag to indicate that defaults will be loaded instead of those from EEPROM
+    break;
+  case CONFIG_DEFAULTS_LOAD_FREQ:
+    ts.load_freq_mode_defaults = true;
+    break;
+  }
+
+  UiConfiguration_LoadEepromValues();
+  ts.load_eeprom_defaults = false;
+  ts.load_freq_mode_defaults = false;
+
+  return retval;
 }
 //
 //
@@ -6104,12 +6060,13 @@ void UiCheckForEEPROMLoadFreqModeDefaultRequest(void)
 //*----------------------------------------------------------------------------
 //
 //
-void UiDriver_KeyTestScreen(void)
+void UiDriver_KeyTestScreen()
 {
 	ushort i, j, k, p_o_state, rb_state, new_state;
-	uint32_t poweroffcount, rbcount;
+	uint32_t poweroffcount, rbcount, enccount;
+	int direction;
 	bool stat = 1;
-	poweroffcount = rbcount = 0;
+	poweroffcount = rbcount = enccount = 0;
 	p_o_state = rb_state = new_state = 0;
 	char txt_buf[40];
 	char* txt;
@@ -6125,7 +6082,7 @@ void UiDriver_KeyTestScreen(void)
 	UiLcdHy28_LcdClear(Blue);							// clear the screen
 
 	//
-	UiLcdHy28_PrintText(40,35,"  Button Test  ",White,Blue,1);
+	UiLcdHy28_PrintText(10,35,"Input Elements Test",White,Blue,1);
 	UiLcdHy28_PrintText(15,70,"press & hold POWER-button to poweroff",White,Blue,0);
 	UiLcdHy28_PrintText(20,90,"press & hold BANDM-button to reboot",White,Blue,0);
 	//
@@ -6149,85 +6106,120 @@ void UiDriver_KeyTestScreen(void)
 			new_state = 1;
 		}
 
-		switch(j)	{							// decode button to text
+		char t;
+		for(t = 0; t < ENC_MAX; t++)
+		    {
+		    direction = UiDriverEncoderRead(t);
+		    if(direction)
+			{
+			enccount = 50;
+			break;
+			}
+		    }
+		if(t != ENC_MAX)
+		    {
+		    char encnum[3];
+		    sprintf(txt_buf,"%s"," Encoder ");		// building string for encoders
+		    sprintf(encnum,"%d",t+1);
+		    strcat(txt_buf,encnum);
+		    if(direction > 0)
+			strcat(txt_buf," <right>");
+		    else
+			strcat(txt_buf," <left> ");
+		    j = 18+t;					// add encoders behind buttons;
+		    }
+
+		switch(j)	{				// decode button to text
 		case	BUTTON_POWER_PRESSED:
-			txt = "POWER ";
+			txt = "        POWER       ";
 			if(poweroffcount > 75)
 			{
-				txt = "powering off";
-				p_o_state = 1;
+			txt = "  powering off...   ";
+			p_o_state = 1;
 			}
 			poweroffcount++;
 			break;
 		case	BUTTON_M1_PRESSED:
-			txt = "  M1  ";
+			txt = "         M1         ";
 			break;
 		case	BUTTON_M2_PRESSED:
-			txt = "  M2  ";
+			txt = "         M2         ";
 			break;
 		case	BUTTON_M3_PRESSED:
-			txt = "  M3  ";
+			txt = "         M3         ";
 			break;
 		case	BUTTON_G1_PRESSED:
-			txt = "  G1  ";
+			txt = "         G1         ";
 			break;
 		case	BUTTON_G2_PRESSED:
-			txt = "  G2  ";
+			txt = "         G2         ";
 			break;
 		case	BUTTON_G3_PRESSED:
-			txt = "  G3  ";
+			txt = "         G3         ";
 			break;
 		case	BUTTON_G4_PRESSED:
-			txt = "  G4  ";
+			txt = "         G4         ";
 			break;
 		case	BUTTON_F1_PRESSED:
-			txt = "  F1  ";
+			txt = "         F1         ";
 			break;
 		case	BUTTON_F2_PRESSED:
-			txt = "  F2  ";
+			txt = "         F2         ";
 			break;
 		case	BUTTON_F3_PRESSED:
-			txt = "  F3  ";
+			txt = "         F3         ";
 			break;
 		case	BUTTON_F4_PRESSED:
-			txt = "  F4  ";
-			poweroffcount = 0;
+			txt = "         F4         ";
 			break;
 		case	BUTTON_F5_PRESSED:
-			txt = "  F5  ";
+			txt = "         F5         ";
 			break;
 		case	BUTTON_BNDM_PRESSED:
-			txt = " BNDM ";
+			txt = "        BNDM        ";
 			if(rbcount > 75)
 			{
-				txt = "rebooting";
-				rb_state = 1;
+			txt = "    rebooting...    ";
+			rb_state = 1;
 			}
 			rbcount++;
 			break;
 		case	BUTTON_BNDP_PRESSED:
-			txt = " BNDP ";
+			txt = "        BNDP        ";
 			break;
 		case	BUTTON_STEPM_PRESSED:
-			txt = "STEPM ";
+			txt = "       STEPM        ";
 			break;
 		case	BUTTON_STEPP_PRESSED:
-			txt = "STEPP ";
+			txt = "      STEPP         ";
 			break;
 		case	TOUCHSCREEN_ACTIVE: ;
 			UiLcdHy28_GetTouchscreenCoordinates(1);
-			sprintf(txt_buf,"%02d%s%02d%s",ts.tp_x,"  ",ts.tp_y,"  ");	//show touched coordinates
+			sprintf(txt_buf,"Touchscr. x:%02d y:%02d",ts.tp_x,ts.tp_y);	//show touched coordinates
+			txt = txt_buf;
+			break;
+		case	18+ENC1:							// handle encoder event
+		case	18+ENC2:
+		case	18+ENC3:
+		case	18+ENCFREQ:
 			txt = txt_buf;
 			break;
 		default:
-			txt = "<none>";		// no button pressed
+			if(!enccount)
+			    txt = "       <none>       ";				// no button pressed
+			else
+			    {
+			    txt = "";
+			    enccount--;
+			    }
 			poweroffcount = 0;
 			rbcount = 0;
 		}
 		//
-		UiLcdHy28_PrintText(120,120,txt,White,Blue,1);		// identify button on screen
+		if(txt[0])
+		    UiLcdHy28_PrintText(10,120,txt,White,Blue,1);			// identify button on screen
 		sprintf(txt_buf, "# of buttons pressed: %d  ", (int)k);
-		UiLcdHy28_PrintText(75,160,txt_buf,White,Blue,0);		// show number of buttons pressed on screen
+		UiLcdHy28_PrintText(75,160,txt_buf,White,Blue,0);			// show number of buttons pressed on screen
 
 		if(p_o_state == 1)
 		{
