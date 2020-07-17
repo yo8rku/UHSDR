@@ -39,8 +39,10 @@ void 	AudioFilter_SetRxHilbertAndDecimationFIR(uint8_t dmod_mode);
 void 	AudioFilter_SetTxHilbertFIR(void);
 
 enum
-{
-    AUDIO_300HZ = 0,
+{	
+	AUDIO_100HZ = 0,
+    AUDIO_200HZ,
+    AUDIO_300HZ,
     AUDIO_500HZ,
     AUDIO_1P4KHZ,
     AUDIO_1P6KHZ,
